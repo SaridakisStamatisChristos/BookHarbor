@@ -1,0 +1,44 @@
+name: BookHarbor real catalog downloads
+
+on:
+  push:
+    branches:
+      - feature/bookharbor-v0.2-library-upgrade
+    paths:
+      - 'tests/live_catalog_smoke.py'
+      - 'bookharbor/**'
+      - '.github/workflows/live-catalog-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bookharbor-live-smoke-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  live-catalog-downloads:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Run real ebook catalog and download smoke tests
+        env:
+          BOOKHARBOR_CONTACT: https://github.com/SaridakisStamatisChristos/BookHarbor
+        run: python tests/live_catalog_smoke.py
+      - name: Store machine-readable smoke report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookharbor-live-catalog-results
+          path: live_smoke_report.json
+          if-no-files-found: warn

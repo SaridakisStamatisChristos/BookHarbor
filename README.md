@@ -1,5 +1,7 @@
 # BookHarbor v0.1 — Private Local Ebook Finder
 
+**New to BookHarbor?** Start with the [complete installation and setup guide](INSTALLATION.md) for Linux Mint, Ubuntu, Windows, macOS, updates, and troubleshooting.
+
 A **local web application** for finding and downloading openly available ebooks on **Linux Mint, Ubuntu, Debian, Windows or macOS**. It runs on your computer; the web browser is only the interface. Book files and a SQLite download ledger are stored locally.
 
 > **Status:** runnable beta / v0.1, with mocked integration tests. Internet connectivity to upstream catalogs cannot be tested in every environment, and providers can change their APIs or access conditions. Do not treat a search result as a guarantee that a downloadable file or copyright permission exists.

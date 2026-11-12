@@ -100,3 +100,72 @@ def test_oapen_public_bitstream_and_language(monkeypatch):
     assert p.search_oapen('open academic', 'el') == []
     assert p.allowed_url(found[0]['formats']['pdf'], 'oapen')
     assert not p.allowed_url('https://library.oapen.org.evil.invalid/file.pdf', 'oapen')
+
+
+def test_gutenberg_falls_back_to_official_opds(monkeypatch):
+    xml = b'''<feed xmlns="http://www.w3.org/2005/Atom" xmlns:dc="http://purl.org/dc/terms/">
+    <entry>
+    <id>https://www.gutenberg.org/ebooks/1342</id>
+    <title>Pride and Prejudice</title><author><name>Austen, Jane</name></author>
+    <dc:language>en</dc:language>
+    <link href="/ebooks/1342.epub3.images" rel="http://opds-spec.org/acquisition" type="application/epub+zip"/>
+    <link href="https://untrusted.invalid/steal.pdf" rel="http://opds-spec.org/acquisition" type="application/pdf"/>
+    <link href="/ebooks/1342.txt.utf-8" rel="http://opds-spec.org/acquisition/borrow" type="text/plain"/>
+    </entry></feed>'''
+    class Response:
+        content = xml
+        def raise_for_status(self): pass
+    def fails(*a, **k):
+        raise p.CatalogError('Gutendex service unavailable')
+    monkeypatch.setattr(p, 'get_json', fails)
+    monkeypatch.setattr(p.requests, 'get', lambda *a, **k: Response())
+    books = p.search_gutenberg('pride', 'en')
+    assert len(books) == 1
+    assert books[0]['id'] == '1342'
+    assert sorted(books[0]['formats']) == ['epub']
+    assert books[0]['source'] == 'gutenberg'
+
+
+def test_opds_malformed_response_is_error(monkeypatch):
+    class Response:
+        content = b'<html>This is an error page</html>'
+        def raise_for_status(self): pass
+    monkeypatch.setattr(p.requests, 'get', lambda *a, **k: Response())
+    with pytest.raises(p.CatalogError):
+        p.search_gutenberg_opds('test')
+
+
+def test_openlibrary_sends_public_scan_filter(monkeypatch):
+    def fake(url, *, params=None):
+        assert url.endswith('search.json')
+        assert params['public_scan'] == 'true'
+        return {'docs': []}
+    monkeypatch.setattr(p, 'get_json', fake)
+    assert p.search_openlibrary('alice') == []
+
+
+def test_oapen_oai_fallback_labels_partial_discovery(monkeypatch):
+    p._oapen_oai_recent_records.cache_clear()
+    xml = b'''<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+      <ListRecords><record><header><identifier>oai:library.oapen.org:20.500.12657/60001</identifier></header>
+      <metadata><oai_dc:dc xmlns:oai_dc="http://www.openarchives.org/OAI/2.0/oai_dc/"
+        xmlns:dc="http://purl.org/dc/elements/1.1/">
+        <dc:title>Open Philosophy</dc:title><dc:creator>Researcher</dc:creator>
+        <dc:language>eng</dc:language>
+        <dc:subject>Philosophy</dc:subject>
+        <dc:identifier>https://library.oapen.org/handle/20.500.12657/60001</dc:identifier>
+      </oai_dc:dc></metadata></record></ListRecords></OAI-PMH>'''
+    class Response:
+        content = xml
+        def raise_for_status(self): pass
+    def blocked(*a, **k):
+        raise p.CatalogError('403 OAPEN REST restricted')
+    monkeypatch.setattr(p, 'get_json', blocked)
+    monkeypatch.setattr(p.requests, 'get', lambda *a, **k: Response())
+    result = p.search_oapen('philosophy', 'en')
+    assert len(result) == 1
+    assert result[0]['id'] == '20.500.12657/60001'
+    assert result[0]['source'] == 'oapen'
+    assert result[0]['formats'] == {}
+    assert 'sample' in result[0]['access']
+    p._oapen_oai_recent_records.cache_clear()

@@ -7,7 +7,7 @@ BookHarbor v0.2 improves the local ebook research workflow. It adds an **OAPEN a
 
 ## What's new
 
-- **Five catalog adapters:** Project Gutenberg, Internet Archive, Open Library, Standard Ebooks' public recent releases, and **OAPEN** academic open-access books. The OAPEN adapter uses its documented repository REST API and only offers direct files hosted on OAPEN. Catalog entries without a safe link remain discovery-only. Live upstream behavior requires real-world testing.
+- **Five catalog adapters:** Project Gutenberg, Internet Archive, Open Library, Standard Ebooks' public recent releases, and **OAPEN** academic open-access books. The OAPEN adapter uses its documented REST API where reachable. If REST returns HTTP 403, it uses an explicitly **partial OAI-PMH metadata sample**. That fallback is not a complete index and may have no direct files. Live provider behavior was tested; see [verified results](LIVE_INTEGRATION_RESULTS.md).
 - **Duplicate-safe queues:** If the same catalog item and file format is already queued, downloading, or successfully stored, another click reuses its existing job rather than creating a second copy. If a previously recorded file has gone missing, a new download is permitted.
 - **SHA-256 integrity:** New downloads record a cryptographic checksum in the SQLite history. Use **Verify file** in the library to compare the saved file against its recorded checksum. Legacy v0.1 files appear as *untracked* and remain accessible.
 - **Library search and status filters:** Find downloads by title, author, or source; filter by completed, queued, running, failed, or interrupted.
@@ -69,7 +69,7 @@ In the project root (Linux / macOS):
 .venv/bin/python -m pytest -q
 ```
 
-**Development validation at this checkpoint: 21 offline tests pass.** These use simulated responses for external catalogs; they do not assert that any upstream API or downloadable file is currently reachable.
+**Development validation at this checkpoint: **30 offline tests pass; live GitHub Actions downloaded and verified EPUB/TXT files from three catalogs**. See [LIVE_INTEGRATION_RESULTS.md](LIVE_INTEGRATION_RESULTS.md).** These use simulated responses for external catalogs; they do not assert that any upstream API or downloadable file is currently reachable.
 
 ## Known limits
 

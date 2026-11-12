@@ -1,5 +1,8 @@
 # BookHarbor v0.2 — Experimental Local Ebook Finder
 
+**Provider stabilization (feature branch):** Gutenberg OPDS fallback, Archive alternate-node retries, Open Library public-scan filtering, and OAPEN's partial OAI metadata fallback are documented in [PROVIDER_STABILITY_V02.md](PROVIDER_STABILITY_V02.md). The OAPEN fallback is **not** a full searchable or downloadable catalog; see the live CI evidence before relying on a source.
+
+
 **Experimental branch:** `feature/bookharbor-v0.2-library-upgrade`. See the [v0.2 upgrade guide](UPGRADE_V0_2.md), [changelog](CHANGELOG.md), and [base installation instructions](INSTALLATION.md). The stable `main` branch remains v0.1. This branch contains 21 passing offline tests; live provider integrations need testing.
 
 **v0.2 changes:** Fifth source (**OAPEN academic books**), duplicate-safe queues, SHA-256 checksums with verify buttons, library search/status filters, CSV export, retries for failed/interrupted jobs, and safer filenames.

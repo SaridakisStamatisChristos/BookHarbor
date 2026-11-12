@@ -31,3 +31,6 @@ if cursor:
     check('no-cache-headers',second,{**HEADERS,'Cache-Control':'no-cache, no-store','Pragma':'no-cache'})
     check('cachebuster',{**second,'_':secrets.token_hex(6)},{**HEADERS,'Cache-Control':'no-cache'})
     check('explicit-sort',{**second,'sorts':'identifier'})
+sorted_first=check('sorted-first',{**base,'sorts':'identifier'})
+if sorted_first:
+    check('sorted-second',{**base,'sorts':'identifier','cursor':sorted_first})

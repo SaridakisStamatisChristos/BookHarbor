@@ -74,3 +74,29 @@ def test_preferred_format():
     formats = {'pdf':'a', 'epub':'b'}
     assert p.preferred_format(formats, 'auto') == ('epub','b')
     assert p.preferred_format(formats, 'pdf') == ('pdf','a')
+
+
+def test_oapen_public_bitstream_and_language(monkeypatch):
+    data = [{
+        'type': 'item', 'name': 'Open Academic Book', 'handle': '20.500.12657/25312',
+        'metadata': [
+            {'key': 'dc.title', 'value': 'Open Academic Book'},
+            {'key': 'dc.contributor.author', 'value': 'Academic Researcher'},
+            {'key': 'dc.language.iso', 'value': 'eng'},
+            {'key': 'dc.date.issued', 'value': '2021-03-01'}],
+        'bitstreams': [
+            {'bundleName': 'ORIGINAL', 'name': 'research.pdf', 'mimeType': 'application/pdf',
+             'retrieveLink': '/bitstream/handle/20.500.12657/25312/research.pdf', 'sizeBytes': 12000},
+            {'bundleName': 'LICENSE', 'name': 'license.txt', 'mimeType': 'text/plain',
+             'retrieveLink': '/bitstream/handle/20.500.12657/25312/license.txt'},
+            {'bundleName': 'ORIGINAL', 'name': 'offsite.epub', 'mimeType': 'application/epub+zip',
+             'retrieveLink': 'https://untrusted.invalid/offsite.epub'}
+        ]}]
+    monkeypatch.setattr(p, 'get_json', lambda *args, **kwargs: data)
+    found = p.search_oapen('open academic', 'en')
+    assert found[0]['author'] == 'Academic Researcher'
+    assert found[0]['year'] == '2021'
+    assert list(found[0]['formats']) == ['pdf']
+    assert p.search_oapen('open academic', 'el') == []
+    assert p.allowed_url(found[0]['formats']['pdf'], 'oapen')
+    assert not p.allowed_url('https://library.oapen.org.evil.invalid/file.pdf', 'oapen')

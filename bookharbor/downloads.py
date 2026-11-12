@@ -1,7 +1,7 @@
 """Safe, bounded file downloader with temporary files, redirect limits and ledger."""
 from __future__ import annotations
+import hashlib
 import re
-import time
 from pathlib import Path
 from urllib.parse import urljoin
 import requests
@@ -42,10 +42,11 @@ def run_download(store: Store, library_dir: Path, job_id: int):
     library_dir.mkdir(parents=True, exist_ok=True)
     name = clean_part(job["author"]) + " - " + clean_part(job["title"]) + " [" + clean_part(job["source"]) + "]." + job["format"]
     dest = library_dir / name
-    if dest.exists():
-        dest = library_dir / (dest.stem + f" [{job_id}]" + dest.suffix)
+    # Job suffix makes names unique across worker threads and title collisions.
+    dest = library_dir / (dest.stem + f" [job-{job_id}]" + dest.suffix)
     part = library_dir / f".{job_id}.part"
     transferred = 0
+    digest = hashlib.sha256()
     try:
         with safe_get(job["url"], job["source"]) as response:
             length = response.headers.get("Content-Length", "")
@@ -62,6 +63,7 @@ def run_download(store: Store, library_dir: Path, job_id: int):
                     if transferred > MAX_FILE_BYTES:
                         raise ValueError("File exceeds 350 MiB size limit")
                     out.write(chunk)
+                    digest.update(chunk)
         if transferred < 100:
             raise ValueError("Downloaded file is unexpectedly small")
         # Minimal format signature check avoids saving obvious HTML or error pages.
@@ -74,7 +76,7 @@ def run_download(store: Store, library_dir: Path, job_id: int):
         if job["format"] == "epub" and not header.startswith(b"PK"):
             raise ValueError("Downloaded file does not appear to be an EPUB archive")
         part.replace(dest)
-        store.update(job_id, "complete", str(dest), transferred)
+        store.update(job_id, "complete", str(dest), transferred, sha256=digest.hexdigest())
     except Exception as exc:
         store.update(job_id, "failed", byte_count=transferred, error=str(exc))
     finally:

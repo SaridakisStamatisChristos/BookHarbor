@@ -1,11 +1,56 @@
 {% extends 'base.html' %}
 {% block content %}
-<section class="libraryhero"><div class="eyebrow">YOUR LOCAL COLLECTION</div><h1>My Library</h1><p>Files stay on this computer. Open your saved books here or visit the library folder.</p><div class="folder">{{folder}}</div></section>
-<section class="results"><div class="sectionheading"><h2>Download history</h2><a class="small link" href="/">Find more books ↗</a></div>
-{% if jobs %}
-<div class="table-scroll"><table><thead><tr><th>Title</th><th>Source</th><th>Format</th><th>Status</th><th>File</th></tr></thead><tbody>
-{% for j in jobs %}<tr><td><strong>{{j.title}}</strong><br><small>{{j.author}}</small></td><td>{{j.source}}</td><td>{{j.format|upper}}</td><td><span class="status status-{{j.status}}">{{j.status}}</span>{% if j.error %}<div class="error">{{j.error}}</div>{% endif %}</td><td>{% if j.status == 'complete' %}<a href="/file/{{j.id}}">Download local file ↓</a>{% else %}—{% endif %}</td></tr>{% endfor %}
-</tbody></table></div>
-{% else %}<div class="empty">No downloads yet. Search for a title and select an available format.</div>{% endif %}
+<section class="libraryhero">
+  <div class="eyebrow">YOUR LOCAL COLLECTION · V0.2</div>
+  <h1>My Library</h1>
+  <p>Find your downloaded books, check file integrity, and retry interrupted transfers. All files stay on this computer.</p>
+  <div class="folder">{{folder}}</div>
 </section>
+<section class="metrics library-metrics">
+  <div><strong>{{summary.completed}}</strong><small>completed downloads</small></div>
+  <div><strong>{{'%.1f' | format(summary.bytes / 1048576)}}</strong><small>recorded MiB downloaded</small></div>
+  <div class="directory"><a class="small link" href="/library/export.csv?q={{query|urlencode}}&amp;status={{status|urlencode}}">Export matching CSV ↓</a></div>
+</section>
+<section class="results">
+  <div class="sectionheading"><h2>Download history</h2><a class="small link" href="/">Find more books ↗</a></div>
+  <form class="library-search" action="/library" method="get">
+    <label>Search titles, authors or catalogs
+      <input name="q" value="{{query}}" maxlength="120" placeholder="Find a saved book…">
+    </label>
+    <label>Status
+      <select name="status">
+        {% for option in ['all','complete','queued','running','failed','interrupted'] %}
+          <option value="{{option}}" {% if status == option %}selected{% endif %}>{{option|capitalize}}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button class="small primary" type="submit">Filter</button>
+    <a class="small link" href="/library">Reset</a>
+  </form>
+  {% if jobs %}
+    <div class="table-scroll"><table><thead>
+      <tr><th>Title</th><th>Source</th><th>Format</th><th>Status</th><th>Actions</th></tr>
+    </thead><tbody>
+    {% for j in jobs %}
+    <tr><td><strong>{{j.title}}</strong><br><small>{{j.author}}</small></td>
+      <td>{{j.source}}</td><td>{{j.format|upper}}</td>
+      <td><span class="status status-{{j.status}}">{{j.status}}</span>
+        {% if j.error %}<div class="error">{{j.error}}</div>{% endif %}
+        {% if j.sha256 %}<small title="SHA-256 {{j.sha256}}">SHA-256 recorded</small>{% endif %}
+      </td>
+      <td class="file-actions">
+        {% if j.status == 'complete' %}
+          <a href="/file/{{j.id}}">Open book ↓</a>
+          <button class="small verify-btn" type="button" data-job="{{j.id}}">Verify file</button>
+        {% elif j.status in ('failed','interrupted') %}
+          <button class="small retry-btn" type="button" data-job="{{j.id}}">Retry</button>
+        {% else %}—{% endif %}
+        <div class="jobfeedback" role="status" aria-live="polite"></div>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody></table></div>
+  {% else %}<div class="empty">No matching downloads. Change your filters or discover more ebooks.</div>{% endif %}
+</section>
+<div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
 {% endblock %}

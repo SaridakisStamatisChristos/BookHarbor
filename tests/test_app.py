@@ -43,9 +43,10 @@ def test_signed_download_and_batch(webapp, monkeypatch):
     assert bad.status_code == 400
     batch = client.post('/api/batch', json={'tokens':[signed['selection_token']], 'preference':'auto'})
     assert batch.status_code == 202
-    assert len(batch.json()['queued']) == 1
-    assert len(calls) == 2
-    assert len(client.get('/api/jobs').json()['jobs']) == 2
+    assert len(batch.json()['queued']) == 0
+    assert len(batch.json()['skipped']) == 1
+    assert len(calls) == 1
+    assert len(client.get('/api/jobs').json()['jobs']) == 1
 
 
 def test_archive_never_queues_borrow_only(webapp, monkeypatch):

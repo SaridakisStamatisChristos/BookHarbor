@@ -20,8 +20,8 @@
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({token})
       });
-      holder.textContent = 'Queued #' + data.job_id + ' — check My Library for progress.';
-      flash('Book added to download queue. See My Library for status.');
+      holder.textContent = data.reused ? 'Already ' + data.status + ' (#' + data.job_id + '). See My Library.' : 'Queued #' + data.job_id + ' — check My Library for progress.';
+      flash(data.reused ? 'That edition is already in your library or queue.' : 'Book added to download queue. See My Library for status.');
     } catch (err) {
       holder.textContent = err.message;
       button.disabled = false;
@@ -84,6 +84,33 @@
       flash(err.message);
       batchButton.textContent = '↓ Download selected';
     } finally { batchButton.disabled = false; }
+  });
+  document.querySelectorAll('.retry-btn').forEach(button => {
+    button.addEventListener('click', async () => {
+      button.disabled = true;
+      const feedback = button.closest('.file-actions').querySelector('.jobfeedback');
+      feedback.textContent = 'Checking original file…';
+      try {
+        const result = await requestJSON('/api/retry/' + button.dataset.job, {method: 'POST', headers: {'X-BookHarbor-Action': 'retry'}});
+        feedback.textContent = result.reused ? 'Already ' + result.status : 'Retry queued (#' + result.job_id + ')';
+        flash(feedback.textContent);
+      } catch (err) { feedback.textContent = err.message; }
+      finally { button.disabled = false; }
+    });
+  });
+  document.querySelectorAll('.verify-btn').forEach(button => {
+    button.addEventListener('click', async () => {
+      button.disabled = true;
+      const feedback = button.closest('.file-actions').querySelector('.jobfeedback');
+      feedback.textContent = 'Checking SHA-256…';
+      try {
+        const result = await requestJSON('/api/verify/' + button.dataset.job);
+        feedback.textContent = result.status === 'verified' ? '✓ File integrity verified' :
+          result.status === 'untracked' ? 'Checksum unavailable (v0.1 file)' :
+          result.status === 'missing' ? 'File missing from library' : '⚠ Integrity mismatch';
+      } catch (err) { feedback.textContent = err.message; }
+      finally { button.disabled = false; }
+    });
   });
   if (document.querySelector('.status-running, .status-queued')) {
     setTimeout(() => location.reload(), 7000);

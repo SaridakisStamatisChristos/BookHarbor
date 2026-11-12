@@ -23,6 +23,8 @@ def test_download_success(monkeypatch, tmp_path):
     assert result['status'] == 'complete'
     assert Path(result['path']).exists()
     assert result['byte_count'] > 100
+    import hashlib
+    assert result['sha256'] == hashlib.sha256(b'PK' + b'example text '*80).hexdigest()
 
 
 def test_download_rejects_markup(monkeypatch, tmp_path):

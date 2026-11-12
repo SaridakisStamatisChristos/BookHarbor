@@ -9,13 +9,13 @@ import os
 import re
 import time
 from pathlib import PurePosixPath
-from urllib.parse import quote, urlparse
+from urllib.parse import quote, urlparse, urljoin
 from xml.etree import ElementTree as ET
 
 import requests
 
 APP_CONTACT = os.environ.get("BOOKHARBOR_CONTACT", "https://github.com/")
-USER_AGENT = f"BookHarbor/0.1 (local personal ebook finder; {APP_CONTACT})"
+USER_AGENT = f"BookHarbor/0.2 (local personal ebook finder; {APP_CONTACT})"
 HEADERS = {"User-Agent": USER_AGENT, "Accept": "application/json, application/atom+xml;q=0.7, */*;q=0.5"}
 TIMEOUT = (8, 22)
 MAX_RESULTS = 12
@@ -48,6 +48,7 @@ def allowed_url(url: str, source: str) -> bool:
             "archive": ("archive.org",),
             "openlibrary": ("archive.org",),
             "standard": ("standardebooks.org",),
+            "oapen": ("oapen.org",),
         }.get(source, ())
         return bool(host and any(host == root or host.endswith("." + root) for root in roots))
     except ValueError:
@@ -257,11 +258,72 @@ def search_standard(query: str, language: str = "", limit: int = MAX_RESULTS):
     return output
 
 
+
+def search_oapen(query: str, language: str = "", limit: int = MAX_RESULTS):
+    """Discover open-access academic books using OAPEN's documented REST search API.
+
+    Only direct PDF/EPUB/TXT/MOBI links hosted on oapen.org are offered.
+    The metadata and attached files are returned by the OAPEN repository itself.
+    """
+    terms = re.findall(r"[^\W_][\w'-]*", query, flags=re.UNICODE)[:6]
+    if not terms:
+        return []
+    # Plain terms prevent caller-supplied Lucene operators from becoming search commands.
+    clean = ' '.join(re.sub(r"[^\w'-]", '', part) for part in terms)
+    data = get_json('https://library.oapen.org/rest/search',
+                    params={'query': clean, 'expand': 'metadata,bitstreams', 'limit': min(limit, 15)})
+    entries = data if isinstance(data, list) else data.get('items', [])
+    output = []
+    for item in entries[:limit]:
+        if not isinstance(item, dict) or item.get('type', 'item') != 'item':
+            continue
+        handle = str(item.get('handle', ''))
+        if not re.fullmatch(r'[A-Za-z0-9.\-]{4,45}/[A-Za-z0-9.\-]{1,75}', handle):
+            continue
+        md = {}
+        for field in item.get('metadata', []):
+            if isinstance(field, dict) and field.get('key') and field.get('value'):
+                md.setdefault(str(field['key']), []).append(str(field['value']))
+        languages = md.get('dc.language.iso', []) + md.get('dc.language', [])
+        if language and languages and not any(value.lower().startswith(language.lower()) for value in languages):
+            continue
+        title = (md.get('dc.title') or [item.get('name') or 'Untitled'])[0]
+        authors = md.get('dc.contributor.author') or md.get('dc.creator') or []
+        year = (md.get('dc.date.issued') or [''])[0][:4]
+        formats = {}
+        for b in item.get('bitstreams', []) or []:
+            if not isinstance(b, dict) or b.get('bundleName') not in ('ORIGINAL', None, ''):
+                continue
+            relative = b.get('retrieveLink')
+            name = str(b.get('name') or '')
+            if not isinstance(relative, str) or not relative.startswith('/'):
+                continue
+            url = urljoin('https://library.oapen.org', relative)
+            if not allowed_url(url, 'oapen'):
+                continue
+            ext = format_from_mime(str(b.get('mimeType') or ''), name)
+            if ext and ext not in formats:
+                try:
+                    if int(b.get('sizeBytes', 0)) > MAX_FILE_BYTES:
+                        continue
+                except (ValueError, TypeError):
+                    continue
+                formats[ext] = url
+        output.append({
+            'source': 'oapen', 'id': handle,
+            'title': title, 'author': display_name(authors), 'year': year,
+            'page': 'https://library.oapen.org/handle/' + quote(handle, safe='/'),
+            'formats': formats, 'access': 'Open-access academic book; check item license',
+        })
+    return output
+
+
 SOURCES = {
     "gutenberg": search_gutenberg,
     "archive": search_archive,
     "openlibrary": search_openlibrary,
     "standard": search_standard,
+    "oapen": search_oapen,
 }
 
 

@@ -1,6 +1,8 @@
-# BookHarbor v0.1 — Private Local Ebook Finder
+# BookHarbor v0.2 — Experimental Local Ebook Finder
 
-**New to BookHarbor?** Start with the [complete installation and setup guide](INSTALLATION.md) for Linux Mint, Ubuntu, Windows, macOS, updates, and troubleshooting.
+**Experimental branch:** `feature/bookharbor-v0.2-library-upgrade`. See the [v0.2 upgrade guide](UPGRADE_V0_2.md), [changelog](CHANGELOG.md), and [base installation instructions](INSTALLATION.md). The stable `main` branch remains v0.1. This branch contains 21 passing offline tests; live provider integrations need testing.
+
+**v0.2 changes:** Fifth source (**OAPEN academic books**), duplicate-safe queues, SHA-256 checksums with verify buttons, library search/status filters, CSV export, retries for failed/interrupted jobs, and safer filenames.
 
 A **local web application** for finding and downloading openly available ebooks on **Linux Mint, Ubuntu, Debian, Windows or macOS**. It runs on your computer; the web browser is only the interface. Book files and a SQLite download ledger are stored locally.
 
@@ -14,8 +16,9 @@ A **local web application** for finding and downloading openly available ebooks 
 | **Internet Archive** | Advanced Search JSON + individual Metadata API | Downloads only files marked public in metadata, in supported formats. Private/restricted/lending-only items are excluded. Server can still reject the download. |
 | **Open Library** | Search API with `ebook_access=public` | Find public-domain/publicly accessible scans, then check their Internet Archive files if a compatible identifier exists. |
 | **Standard Ebooks** | Public **new releases** Atom feed only | Shows matching recent books; can download only if the feed contains a direct EPUB/PDF/TXT/MOBI enclosure. The complete OPDS feed requires membership. |
+| **OAPEN** | Official academic repository REST API | Discovers open-access academic titles; only OAPEN-hosted public EPUB/PDF/TXT/MOBI links from item metadata are offered. |
 
-For scholarly open access, we suggest the **Directory of Open Access Books** (https://www.doabooks.org/), **OAPEN** (https://www.oapen.org/), and **OpenStax** (https://openstax.org/). These are **not yet integrated into the automatic downloader**.
+OAPEN academic search is integrated in v0.2. **DOAB** (https://www.doabooks.org/) and **OpenStax** (https://openstax.org/) remain prospective future integrations.
 
 This app does **not** bypass DRM, paid access, borrowing time limits, login requirements, anti-bot measures, or source access policies. Search via APIs is preferable to uncontrolled HTML scraping.
 
@@ -26,14 +29,14 @@ On Linux Mint / Ubuntu:
 ```bash
 sudo apt update
 sudo apt install -y git python3 python3-venv python3-pip
-git clone https://github.com/SaridakisStamatisChristos/BookHarbor.git
+git clone --branch feature/bookharbor-v0.2-library-upgrade https://github.com/SaridakisStamatisChristos/BookHarbor.git
 cd BookHarbor
 ./run.sh
 ```
 
 Then open **http://127.0.0.1:8765**. The launcher is executable in Git.
 
-Alternatively, download the [v0.1 release ZIP](releases/BookHarbor_v0_1_Linux_Windows.zip), extract it, and follow the platform setup steps below.
+For the **stable v0.1 release only**, download the [v0.1 ZIP](releases/BookHarbor_v0_1_Linux_Windows.zip). To run v0.2, use the branch-specific clone command above and follow [UPGRADE_V0_2.md](UPGRADE_V0_2.md).
 
 ## Linux Mint / Ubuntu installation
 
@@ -106,7 +109,7 @@ Import the downloaded books into [Calibre](https://calibre-ebook.com/) if you wa
 
 ## Safety and service limits
 
-- **Downloads are initiated only by an explicit user click** (individual format or selected batch). No unlimited crawling or mass downloads.
+- **Downloads are initiated only by an explicit user click** (individual format or selected batch). No unlimited crawling or mass downloads. Duplicate active/completed editions are reused.
 - The app accepts download files from a fixed set of ebook provider domains; redirects outside those domains are rejected. HTTP (unencrypted) and localhost URLs are rejected.
 - Internet Archive file metadata is checked before enabling downloads and checked again before single-file queueing. This is a conservative access check, **not a legal rights determination**.
 - Download content is streamed to a temporary `.part` file and limited to **350 MiB per file**. Basic PDF/EPUB checks reject obvious HTML error pages.
@@ -141,7 +144,7 @@ python -m pip install pytest httpx
 python -m pytest -q
 ```
 
-The included tests use mock catalog responses and fake file content; they do **not** exercise live upstream web services.
+The **21 included offline tests** use mock catalog responses and fake file content; they do **not** exercise live upstream web services.
 
 ## Technical structure
 

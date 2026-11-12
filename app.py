@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """BookHarbor — local web UI, no login, no cloud backend."""
 from __future__ import annotations
+import csv
+import hashlib
+import io
 import os
 import secrets
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
@@ -101,10 +104,10 @@ def index(request: Request):
                     warnings.append(f"{pname}: {str(exc)[:140]}")
         order = {name: i for i, name in enumerate(SOURCES)}
         results.sort(key=lambda book: (order[book["source"]], book["title"].casefold()))
-    completed = sum(j["status"] == "complete" for j in store.list(limit=1000))
+    summary = store.summary()
     return templates.TemplateResponse(request, "index.html", {
         "query": query, "source": source, "language": language,
-        "books": results, "warnings": warnings, "total": completed,
+        "books": results, "warnings": warnings, "total": summary["completed"],
         "library": str(LIBRARY),
     })
 
@@ -147,9 +150,11 @@ async def download(request: Request):
             current = await run_in_threadpool(archive_formats, identifier)
             if current.get(fmt) != url:
                 raise ValueError("That file is not currently confirmed as a public download")
-        job_id = store.add(payload, fmt, url)
-        download_executor.submit(run_download, store, LIBRARY, job_id)
-        return JSONResponse({"job_id": job_id, "status": "queued"}, status_code=202)
+        job_id, created, reason = store.add_unique(payload, fmt, url)
+        if created:
+            download_executor.submit(run_download, store, LIBRARY, job_id)
+        return JSONResponse({"job_id": job_id, "status": "queued" if created else reason,
+                             "reused": not created}, status_code=202 if created else 200)
     except (ValueError, CatalogError, KeyError, AttributeError, TypeError) as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
 
@@ -188,9 +193,12 @@ async def batch(request: Request):
                 fmt, url = choice
                 if not allowed_url(url, source):
                     raise ValueError("Unexpected download host")
-                job_id = store.add(book, fmt, url)
-                download_executor.submit(run_download, store, LIBRARY, job_id)
-                queue.append(job_id)
+                job_id, created, reason = store.add_unique(book, fmt, url)
+                if created:
+                    download_executor.submit(run_download, store, LIBRARY, job_id)
+                    queue.append(job_id)
+                else:
+                    skipped.append(f"Already {reason}: {book.get('title', 'Book')}")
             except (ValueError, CatalogError, KeyError, TypeError) as exc:
                 skipped.append(str(exc)[:150])
         return JSONResponse({"queued": queue, "skipped": skipped}, status_code=202)
@@ -208,9 +216,90 @@ def jobs_api():
 
 @app.get("/library")
 def library_page(request: Request):
+    query = request.query_params.get('q', '').strip()[:120]
+    status = request.query_params.get('status', 'all')
+    if status not in ('all', 'queued', 'running', 'complete', 'failed', 'interrupted'):
+        status = 'all'
     return templates.TemplateResponse(request, "library.html", {
-        "jobs": store.list(limit=200), "folder": str(LIBRARY)
+        "jobs": store.list_filtered(query, status, limit=200),
+        "folder": str(LIBRARY), "query": query, "status": status,
+        "summary": store.summary()
     })
+
+
+def _safe_csv_cell(value) -> str:
+    """Prevent CSV formulas from executing when opened in spreadsheet software."""
+    data = str(value if value is not None else '')
+    return "'" + data if data.lstrip().startswith(('=', '+', '-', '@')) else data
+
+
+@app.get('/library/export.csv')
+def export_csv(request: Request):
+    query = request.query_params.get('q', '').strip()[:120]
+    status = request.query_params.get('status', 'all')
+    if status not in ('all', 'queued', 'running', 'complete', 'failed', 'interrupted'):
+        status = 'all'
+    rows = store.list_filtered(query, status, limit=10000)
+    output = io.StringIO()
+    writer = csv.writer(output)
+    columns = ('id', 'title', 'author', 'source', 'book_id', 'format', 'status',
+               'byte_count', 'sha256', 'created_at', 'updated_at', 'error')
+    writer.writerow(columns)
+    for row in rows:
+        writer.writerow([_safe_csv_cell(row.get(col)) for col in columns])
+    return Response(output.getvalue(), media_type='text/csv; charset=utf-8', headers={
+        'Content-Disposition': 'attachment; filename="bookharbor-library.csv"',
+        'Cache-Control': 'no-store'
+    })
+
+
+@app.get('/api/verify/{job_id}')
+def verify_download(job_id: int):
+    job = store.get(job_id)
+    if not job or job['status'] != 'complete':
+        raise HTTPException(status_code=404, detail='Not a completed download')
+    target = Path(job['path']).resolve()
+    if not target.is_relative_to(LIBRARY) or not target.is_file():
+        return {'status': 'missing', 'job_id': job_id}
+    if not job.get('sha256'):
+        return {'status': 'untracked', 'job_id': job_id,
+                'message': 'Legacy download: checksum not recorded in v0.1.'}
+    digest = hashlib.sha256()
+    with target.open('rb') as f:
+        for block in iter(lambda: f.read(256 * 1024), b''):
+            digest.update(block)
+    return {'status': 'verified' if digest.hexdigest() == job['sha256'] else 'mismatch',
+            'job_id': job_id}
+
+
+@app.post('/api/retry/{job_id}')
+async def retry_download(job_id: int, request: Request):
+    """Retry a failed or interrupted job, without bypassing Archive checks."""
+    # A non-simple custom header prevents cross-origin HTML forms from triggering jobs.
+    if request.headers.get('x-bookharbor-action') != 'retry':
+        return JSONResponse({'error': 'Retry requires a local app request'}, status_code=403)
+    job = store.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404)
+    if job['status'] not in ('failed', 'interrupted'):
+        return JSONResponse({'error': 'Only failed/interrupted jobs can be retried'}, status_code=409)
+    src, fmt, url = job['source'], job['format'], job['url']
+    if src not in SOURCES or fmt not in ('epub', 'pdf', 'txt', 'mobi') or not allowed_url(url, src):
+        return JSONResponse({'error': 'Unsafe or unsupported original download'}, status_code=400)
+    if src in ('archive', 'openlibrary'):
+        try:
+            now = await run_in_threadpool(archive_formats, job['book_id'])
+            if now.get(fmt) != url:
+                raise ValueError('No longer confirmed as an open Archive file')
+        except (CatalogError, ValueError) as exc:
+            return JSONResponse({'error': str(exc)}, status_code=400)
+    book = {'source': src, 'id': job['book_id'], 'title': job['title'], 'author': job['author']}
+    new_id, created, reason = store.add_unique(book, fmt, url)
+    if created:
+        download_executor.submit(run_download, store, LIBRARY, new_id)
+    return JSONResponse({'job_id': new_id, 'reused': not created,
+                         'status': 'queued' if created else reason}, status_code=202 if created else 200)
+
 
 
 @app.get("/file/{job_id}")

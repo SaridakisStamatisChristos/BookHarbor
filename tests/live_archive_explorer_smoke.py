@@ -19,13 +19,20 @@ def main():
              'session':first['id'], 'finished':first['finished'],
              'catalog_total':catalog.stats()['indexed']}),flush=True)
         if not first['finished']:
-            next_page=catalog.next_page(first['id'])
-            assert next_page['page_count']==2
-            assert next_page['discovered'] >= first['discovered']
-            assert catalog.stats()['indexed']>=first['discovered']
-            print('ARCHIVE LIVE SECOND PAGE',json.dumps({'count':next_page['discovered'],
-                  'pages':next_page['page_count'],'finished':next_page['finished']}),flush=True)
-    print('ARCHIVE CURSOR LIVE PASS',flush=True)
+            progress = first
+            for _ in range(3):
+                progress=catalog.next_page(first['id'])
+                assert progress['page_count']>first['page_count']
+                assert progress['discovered'] >= first['discovered']
+                print('ARCHIVE LIVE CONTINUATION',json.dumps({'count':progress['discovered'],
+                      'pages':progress['page_count'],'mode':progress['mode'],
+                      'finished':progress['finished']}),flush=True)
+                if progress['discovered'] > first['discovered'] or progress['finished']:
+                    break
+            if progress['discovered'] <= first['discovered'] and not progress['finished']:
+                raise RuntimeError('Second page made no indexing progress even after fallback')
+            assert catalog.stats()['indexed'] >= first['discovered']
+    print('ARCHIVE DEEP INDEX LIVE PASS',flush=True)
 
 
 if __name__=='__main__':

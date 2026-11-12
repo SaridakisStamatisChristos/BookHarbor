@@ -4,7 +4,7 @@
 
 ## What changed
 
-Internet Archive has millions of digitized texts, but ordinary search pagination does not cover the complete catalog. BookHarbor v0.3 adds a dedicated **Archive Explorer** using Internet Archive's official read-only cursor API (`/services/search/v1/scrape`). This is **metadata exploration**, not a mass downloader.
+Internet Archive has millions of digitized texts, but ordinary search pagination does not cover the complete catalog. BookHarbor v0.3 adds a dedicated **Archive Explorer** using Internet Archive's official read-only cursor API (`/services/search/v1/scrape`). This is **metadata exploration**, not a mass downloader. When Internet Archive returns a repeated cursor, BookHarbor switches to the official Advanced Search API, deduplicates previously indexed records, and visibly marks the mode as **standard pagination** (up to 10,000 results per query). This fallback is not equivalent to unlimited deep cursor traversal. Use narrower author, subject, collection, language, or year filters to explore additional slices.
 
 The new local database `~/.local/share/bookharbor/archive_catalog.sqlite3` stores discovered titles and search sessions independently of the existing download history (`jobs.sqlite3`). A stopped or restarted BookHarbor can reopen a session link and continue indexing where it left off, provided Internet Archive still accepts the saved cursor. Archive results are not guaranteed immutable: the provider may change its index or availability between visits.
 
@@ -13,7 +13,7 @@ The new local database `~/.local/share/bookharbor/archive_catalog.sqlite3` store
 1. Install from the **feature branch** and launch normally with `./run.sh`.
 2. Open `http://127.0.0.1:8765/archive` (or click **Archive Explorer** in the navigation).
 3. Enter a title/subject search, an author, or a specific collection identifier. Optional filters: language (`en`, `el`), subject, publication years.
-4. Click **Search and index first 100**. Each later **Index next 100** click requests exactly one additional catalog page. This approach can move past ordinary search pagination limits.
+4. Click **Search and index first 100**. Choose **Index next 100** for one page, or set **Pages per batch** (1–50) and choose **Index batch in background** to process up to 5,000 metadata entries in a controlled batch. You can stop an active batch; the current request will finish first. This approach can move past ordinary search pagination limits.
 5. Browse your saved results; use local title/author/subject search and availability filters.
 6. Click **Inspect open files** on a title to check that item's current public EPUB/PDF/TXT/MOBI metadata. Only files marked public and matching the existing allowlist are offered.
 7. Select up to **5** titles to check file availability together, or select up to **10** to request individually verified downloads in one batch. The existing downloader independently rechecks Archive metadata before enqueueing.
@@ -29,7 +29,7 @@ The new local database `~/.local/share/bookharbor/archive_catalog.sqlite3` store
 
 ### Resource limits and safeguards
 
-- Exactly **one 100-record page per explicit request**. No background mass crawling.
+- Initial search: one 100-record page. Optional explicitly started background batches of **1–50 pages** (up to 5,000 metadata records); each page is individually rate-paced and the batch can be stopped. No unbounded scheduled crawling.
 - Up to **50,000 indexed results per search session**. Start a new narrower session for additional exploration.
 - At least **1 second between cursor page requests** in the running app. Provider throttling and changes are respected, not bypassed.
 - Metadata de-duplicated by Internet Archive identifier.
@@ -62,7 +62,7 @@ PYTHONPATH=. .venv/bin/python tests/live_archive_explorer_smoke.py
 
 - Indexed metadata is not a complete cross-edition union of all books. Some searches may include false positives because Internet Archive's metadata and indexing evolve.
 - Access filtering is based on **previously inspected** items. It is not a claim to search all the Archive's public files without contacting their individual metadata endpoints.
-- Internet Archive search cursors can expire or become invalid; the session retains a last error and can be restarted as a new search if necessary.
+- Background batches run only while the app remains open; after restart, start another batch using the persisted session cursor. Internet Archive search cursors can expire or become invalid; the session retains a last error and can be restarted as a new search if necessary.
 - The download queue is still user-initiated, maximum 10 titles per batch. It does not indiscriminately retrieve thousands of files.
 - Open Library and OAPEN integrations are unchanged in this feature; their known limitations remain disclosed.
 

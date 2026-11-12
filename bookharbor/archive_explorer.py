@@ -135,6 +135,34 @@ def scrape_page(filters: ArchiveFilters, cursor: str | None = None) -> tuple[lis
     return items, next_cursor, total
 
 
+def advancedsearch_page(filters: ArchiveFilters, page: int) -> tuple[list[dict], int | None]:
+    """Conservative fallback when the upstream scrape cursor is replayed.
+
+    IA caps sorted pagination at 10,000 results; callers MUST mark the limit.
+    """
+    if not 1 <= page <= 100:
+        raise CatalogError('Standard Archive pagination stops at 10,000 results; refine your filters')
+    params = {'q':filters.expression(), 'output':'json', 'rows':100, 'page':page,
+              'fl[]': FIELDS.split(','), 'sort[]':'identifier asc'}
+    try:
+        resp = requests.get('https://archive.org/advancedsearch.php',params=params,
+                            headers=HEADERS,timeout=(12,45))
+        resp.raise_for_status()
+        data = resp.json()
+    except (requests.RequestException, ValueError) as exc:
+        raise CatalogError('Archive pagination unavailable: '+str(exc)[:230]) from exc
+    if not isinstance(data,dict) or not isinstance(data.get('response'),dict):
+        raise CatalogError('Archive returned invalid paginated search results')
+    result = data['response']
+    rows = result.get('docs')
+    if not isinstance(rows,list) or len(rows)>100:
+        raise CatalogError('Archive returned an invalid paginated result page')
+    total = result.get('numFound')
+    if not isinstance(total,int) or isinstance(total,bool):
+        total = None
+    return rows,total
+
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions(
  id TEXT PRIMARY KEY, filters_json TEXT NOT NULL, expression TEXT NOT NULL,
@@ -142,7 +170,8 @@ CREATE TABLE IF NOT EXISTS sessions(
  discovered INTEGER NOT NULL DEFAULT 0, estimate INTEGER,
  finished INTEGER NOT NULL DEFAULT 0, last_error TEXT NOT NULL DEFAULT '',
  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
- updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+ updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ mode TEXT NOT NULL DEFAULT 'cursor', fallback_page INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS catalog(
  identifier TEXT PRIMARY KEY, title TEXT NOT NULL, author TEXT NOT NULL,
@@ -170,8 +199,15 @@ class ArchiveCatalog:
         self._lock = threading.Lock()
         self._last_request = 0.0
         self.min_spacing = min_spacing
+        self._harvest_lock = threading.Lock()
+        self._harvest_jobs = {}
         with self.connect() as db:
             db.executescript(SCHEMA)
+            columns = {row['name'] for row in db.execute('PRAGMA table_info(sessions)')}
+            if 'mode' not in columns:
+                db.execute("ALTER TABLE sessions ADD COLUMN mode TEXT NOT NULL DEFAULT 'cursor'")
+            if 'fallback_page' not in columns:
+                db.execute("ALTER TABLE sessions ADD COLUMN fallback_page INTEGER NOT NULL DEFAULT 0")
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=30)
@@ -211,8 +247,26 @@ class ArchiveCatalog:
                 time.sleep(delay)
             self._last_request = time.monotonic()
             filters = ArchiveFilters(**json.loads(session['filters_json']))
+            mode = session['mode']
+            fallback_page = session['fallback_page']
             try:
-                raw_items, new_cursor, estimate = scrape_page(filters, session['cursor'])
+                if mode == 'advanced':
+                    fallback_page += 1
+                    raw_items, estimate = advancedsearch_page(filters, fallback_page)
+                    new_cursor = None
+                else:
+                    try:
+                        raw_items, new_cursor, estimate = scrape_page(filters, session['cursor'])
+                    except CatalogError as exc:
+                        if session['page_count'] and ('same cursor' in str(exc) or 'repeated' in str(exc)):
+                            # Re-read fallback page 1 to avoid skipping records if
+                            # the provider's cursor ordering differs from sorted pages.
+                            mode = 'advanced'
+                            fallback_page = 1
+                            raw_items, estimate = advancedsearch_page(filters, fallback_page)
+                            new_cursor = None
+                        else:
+                            raise
             except CatalogError as exc:
                 with self.connect() as db:
                     db.execute('UPDATE sessions SET last_error=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
@@ -242,7 +296,7 @@ class ArchiveCatalog:
             with self.connect() as db:
                 known = {r[0] for r in db.execute('SELECT identifier FROM session_items WHERE session_id=?', (session_id,))}
             fresh = [item for item in valid if item['identifier'] not in known]
-            if session['page_count'] and valid and not fresh:
+            if mode == 'cursor' and session['page_count'] and valid and not fresh:
                 raise CatalogError('Archive repeated an already indexed page; retry later')
             # One transaction inserts records and advances the cursor atomically.
             with self.connect() as db:
@@ -257,16 +311,20 @@ class ArchiveCatalog:
                          seen_at=CURRENT_TIMESTAMP''', item)
                     db.execute('INSERT OR IGNORE INTO session_items(session_id,identifier,ordinal) VALUES(?,?,?)',
                                (session_id, item['identifier'], session['discovered'] + i))
-                stopped = not new_cursor or not raw_items or session['discovered'] + len(fresh) >= MAX_PER_SESSION
+                stopped = (not raw_items or session['discovered'] + len(fresh) >= MAX_PER_SESSION or
+                           (mode == 'cursor' and not new_cursor) or
+                           (mode == 'advanced' and (fallback_page >= 100 or
+                            (estimate is not None and fallback_page * 100 >= estimate))))
                 db.execute('''UPDATE sessions SET cursor=?, page_count=page_count+1, discovered=discovered+?,
-                          estimate=COALESCE(estimate,?), finished=?, last_error='', updated_at=CURRENT_TIMESTAMP
-                          WHERE id=?''',
-                           (new_cursor if not stopped else None, len(fresh), estimate, int(stopped), session_id))
+                          estimate=COALESCE(estimate,?), finished=?, last_error='', updated_at=CURRENT_TIMESTAMP,
+                          mode=?, fallback_page=? WHERE id=?''',
+                           (new_cursor if mode=='cursor' and not stopped else None,
+                            len(fresh), estimate, int(stopped), mode, fallback_page, session_id))
             return self._view_session(self.get_session(session_id))
 
     def _view_session(self, row: dict) -> dict:
         return {key: row[key] for key in ('id', 'expression', 'page_count', 'discovered',
-                                          'estimate', 'finished', 'last_error', 'created_at', 'updated_at')}
+                                          'estimate', 'finished', 'last_error', 'created_at', 'updated_at', 'mode', 'fallback_page')}
 
     def session_status(self, session_id: str) -> dict:
         row = self.get_session(session_id)
@@ -322,6 +380,60 @@ class ArchiveCatalog:
             db.execute('''UPDATE catalog SET access=?,formats_json=?,checked_at=CURRENT_TIMESTAMP
                        WHERE identifier=?''',
                        ('public' if vetted else 'unavailable', json.dumps(vetted), identifier))
+
+    def start_harvest(self, session_id: str, pages: int = 10) -> dict:
+        """Explicit, bounded background indexing; no unattended recurring crawler."""
+        if isinstance(pages, bool) or not isinstance(pages, int) or not 1 <= pages <= 50:
+            raise ValueError('Choose 1 to 50 pages (100–5,000 metadata records)')
+        state = self.session_status(session_id)
+        if state['finished']:
+            raise ValueError('This session has finished indexing')
+        with self._harvest_lock:
+            prior = self._harvest_jobs.get(session_id)
+            if prior and prior['thread'].is_alive():
+                raise ValueError('An indexing batch is already running for this search')
+            stop = threading.Event()
+            job = {'thread': None, 'stop': stop, 'pages': pages, 'completed': 0}
+
+            def worker():
+                for _ in range(pages):
+                    if stop.is_set():
+                        break
+                    try:
+                        page = self.next_page(session_id)
+                        job['completed'] += 1
+                    except Exception as exc:
+                        with self.connect() as db:
+                            db.execute('UPDATE sessions SET last_error=? WHERE id=?',
+                                       (str(exc)[:350], session_id))
+                        break
+                    if page['finished']:
+                        break
+
+            job['thread'] = threading.Thread(target=worker, daemon=True,
+                                           name='archive-harvest-' + session_id[:8])
+            self._harvest_jobs[session_id] = job
+            job['thread'].start()
+        return self.harvest_status(session_id)
+
+    def stop_harvest(self, session_id: str) -> dict:
+        if not self.get_session(session_id):
+            raise ValueError('Unknown exploration session')
+        with self._harvest_lock:
+            job = self._harvest_jobs.get(session_id)
+            if job and job['thread'].is_alive():
+                job['stop'].set()
+        return self.harvest_status(session_id)
+
+    def harvest_status(self, session_id: str) -> dict:
+        state = self.session_status(session_id)
+        with self._harvest_lock:
+            job = self._harvest_jobs.get(session_id)
+            state['harvesting'] = bool(job and job['thread'].is_alive())
+            state['harvest_completed_pages'] = job['completed'] if job else 0
+            state['harvest_target_pages'] = job['pages'] if job else 0
+            state['stop_requested'] = bool(job and job['stop'].is_set())
+        return state
 
     def stats(self) -> dict:
         with self.connect() as db:

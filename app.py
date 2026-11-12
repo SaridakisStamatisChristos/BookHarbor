@@ -136,9 +136,27 @@ async def archive_next(request: Request):
 @app.get('/api/archive/session')
 def archive_status(session: str = ''):
     try:
-        return archive_catalog.session_status(session)
+        return archive_catalog.harvest_status(session)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+
+
+@app.post('/api/archive/harvest')
+async def archive_harvest(request: Request):
+    body = await _archive_body(request)
+    try:
+        return archive_catalog.start_harvest(str(body.get('session') or ''),body.get('pages',10))
+    except ValueError as exc:
+        return JSONResponse({'error':str(exc)},status_code=400)
+
+
+@app.post('/api/archive/stop')
+async def archive_stop(request: Request):
+    body = await _archive_body(request)
+    try:
+        return archive_catalog.stop_harvest(str(body.get('session') or ''))
+    except ValueError as exc:
+        return JSONResponse({'error':str(exc)},status_code=400)
 
 
 @app.get('/api/archive/items')

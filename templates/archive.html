@@ -30,6 +30,9 @@
     <div class="hint" id="archive-pages">No pages indexed</div></div>
   <div class="archive-toolbar">
     <button id="archive-next-btn" class="primary">Index next 100 records</button>
+    <label>Pages per batch (100 records each)<input id="archive-batch-pages" type="number" min="1" max="50" value="10"></label>
+    <button id="archive-harvest-btn">Index batch in background</button>
+    <button id="archive-stop-btn" disabled>Stop batch</button>
     <label>Find indexed title<input id="archive-local-query" placeholder="Search your saved results"></label>
     <label>Availability<select id="archive-access-filter"><option value="all">All indexed</option><option value="public">Verified public file</option><option value="unchecked">Not checked</option><option value="unavailable">No supported public file</option></select></label>
     <button id="archive-filter-btn">Filter local index</button>

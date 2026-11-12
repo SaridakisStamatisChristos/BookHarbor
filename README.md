@@ -1,6 +1,8 @@
 # BookHarbor v0.2 — Experimental Local Ebook Finder
 
 ## Experimental v0.3 — Internet Archive Explorer
+The v0.3 preview also supports **bounded background indexing** (up to 50 pages/5,000 records per user-initiated batch), can stop/resume persisted searches, and falls back to standard pagination when Internet Archive repeats a scrape cursor. Standard pagination is limited to 10,000 results per query.
+
 
 A separate feature branch adds [Archive Explorer](ARCHIVE_EXPLORER_V03.md): persistent local metadata indexing via the official cursor-search API, deep pagination, advanced filters, public-file inspection, and resumable downloads with HTTP validator checks. Open `/archive` when running that branch. The stable `main` branch is unchanged until verification and promotion.
 

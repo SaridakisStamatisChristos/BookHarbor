@@ -96,3 +96,94 @@ def test_concurrent_page_advancement_fetches_once(monkeypatch,tmp_path):
         result=list(pool.map(lambda _:db.next_page(session),range(3)))
     assert all(x['finished'] for x in result)
     assert calls==[None]
+
+
+def test_bounded_background_harvest_and_resume(monkeypatch,tmp_path):
+    pages=[demo_page(['a'], 'c1'),demo_page(['b'], 'c2'),demo_page(['c'], None)]
+    calls=[]
+    def fetch(f,cursor=None):
+        calls.append(cursor)
+        return pages.pop(0)
+    monkeypatch.setattr(a,'scrape_page',fetch)
+    db=a.ArchiveCatalog(tmp_path/'archive.sqlite3',min_spacing=0)
+    state=db.start({'subject':'math'})
+    sid=state['id']
+    with pytest.raises(ValueError):db.start_harvest(sid,0)
+    with pytest.raises(ValueError):db.start_harvest(sid,51)
+    db.start_harvest(sid,2)
+    db._harvest_jobs[sid]['thread'].join(timeout=3)
+    assert db.harvest_status(sid)['harvesting'] is False
+    assert db.session_status(sid)['page_count']==3
+    assert db.session_status(sid)['finished']
+    assert db.stats()['indexed']==3
+    assert calls==[None,'c1','c2']
+
+
+def test_background_harvest_can_stop(monkeypatch,tmp_path):
+    import threading
+    gate=threading.Event()
+    requested=threading.Event()
+    calls=[]
+    def fetch(f,cursor=None):
+        calls.append(cursor)
+        if cursor:
+            requested.set()
+            gate.wait(timeout=2)
+        return demo_page([str(len(calls))], 'next'+str(len(calls)))
+    monkeypatch.setattr(a,'scrape_page',fetch)
+    db=a.ArchiveCatalog(tmp_path/'cat.sqlite3',min_spacing=0)
+    sid=db.start({'collection':'americana'})['id']
+    db.start_harvest(sid,20)
+    assert requested.wait(timeout=2)
+    db.stop_harvest(sid)
+    gate.set()
+    db._harvest_jobs[sid]['thread'].join(timeout=3)
+    assert len(calls)==2
+    assert db.session_status(sid)['finished']==0
+
+
+def test_replayed_cursor_switches_to_bounded_advanced_search(monkeypatch,tmp_path):
+    def scrape(f,cursor=None):
+        if not cursor:
+            return demo_page(['first','second'],'cursor-one')
+        raise a.CatalogError('Archive returned the same cursor twice')
+    calls=[]
+    def fallback(f,page):
+        calls.append(page)
+        if page==1:
+            return ([{'identifier':'first','title':'First'}, {'identifier':'third','title':'Third'}], 300)
+        return ([{'identifier':'fourth','title':'Fourth'}],300)
+    monkeypatch.setattr(a,'scrape_page',scrape)
+    monkeypatch.setattr(a,'advancedsearch_page',fallback)
+    db=a.ArchiveCatalog(tmp_path/'arc.sqlite3',min_spacing=0)
+    session=db.start({'collection':'americana'})['id']
+    state=db.next_page(session)
+    assert state['mode']=='advanced' and state['fallback_page']==1
+    assert state['finished']==0
+    assert db.list_items(session)['total']==3
+    state=db.next_page(session)
+    assert state['fallback_page']==2
+    assert db.list_items(session)['total']==4
+    assert calls==[1,2]
+
+
+def test_fallback_10000_limit_is_explicit(monkeypatch,tmp_path):
+    def scrape(f,cursor=None):
+        if cursor:
+            raise a.CatalogError('Archive returned the same cursor twice')
+        return demo_page(['first'],'cursor')
+    monkeypatch.setattr(a,'scrape_page',scrape)
+    monkeypatch.setattr(a,'advancedsearch_page',lambda f,page:([{'identifier':f'page-{page}'}],100000))
+    db=a.ArchiveCatalog(tmp_path/'arc.sqlite3',min_spacing=0)
+    sid=db.start({'query':'large'})['id']
+    db.next_page(sid)
+    with db.connect() as conn:
+        conn.execute('UPDATE sessions SET fallback_page=99 WHERE id=?',(sid,))
+    state=db.next_page(sid)
+    assert state['finished']==1 and state['fallback_page']==100
+
+
+def test_advancedsearch_rejects_page_above_limit():
+    f=a.ArchiveFilters.parse({'subject':'mathematics'})
+    with pytest.raises(a.CatalogError,match='10,000'):
+        a.advancedsearch_page(f,101)

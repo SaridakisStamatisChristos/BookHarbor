@@ -9,6 +9,7 @@
   let offset = 0;
   let shown = [];
   let total = 0;
+  let wasHarvesting = false;
   const request = async (url, data) => {
     const response = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json','X-BookHarbor-Action':'archive-explorer'},body:JSON.stringify(data)});
     const json = await response.json();
@@ -25,8 +26,12 @@
     const state = await get('/api/archive/session?session='+encodeURIComponent(session));
     panel.hidden=false;
     $('archive-counter').textContent=state.discovered.toLocaleString()+' records indexed in this session';
-    $('archive-pages').textContent=state.page_count+' page(s) fetched'+(state.finished?' · complete/limit reached':' · more available');
-    $('archive-next-btn').disabled=Boolean(state.finished);
+    $('archive-pages').textContent=state.page_count+' page(s) fetched · '+(state.mode==='advanced'?'Standard pagination (10,000 result ceiling)':'Cursor mode')+(state.finished?' · complete/limit reached':' · more available');
+    $('archive-next-btn').disabled=Boolean(state.finished || state.harvesting);
+    $('archive-harvest-btn').disabled=Boolean(state.finished || state.harvesting);
+    $('archive-stop-btn').disabled=!state.harvesting;
+    wasHarvesting = Boolean(state.harvesting);
+    if(state.harvesting){tell('Indexing in background: '+state.harvest_completed_pages+'/'+state.harvest_target_pages+' pages. Close the app to stop.');}
     await refreshIndex(); await refreshStats();
   }
   async function refreshIndex() {
@@ -69,6 +74,29 @@
     try{const state=await request('/api/archive/next',{session});await refreshSession();tell(state.finished?'Indexing finished for this session.':'Indexed next 100 or fewer records.');}
     catch(err){tell(err.message);}finally{if(session)await refreshSession().catch(()=>{});}
   });
+  $('archive-harvest-btn').addEventListener('click',async()=>{
+    const pages=Number($('archive-batch-pages').value);
+    if(!Number.isInteger(pages)||pages<1||pages>50){tell('Choose 1–50 pages.');return;}
+    try {const state=await request('/api/archive/harvest',{session,pages});
+      tell('Background metadata indexing started; '+pages+' page(s) requested.');
+      await refreshSession();
+    }catch(err){tell(err.message);}
+  });
+  $('archive-stop-btn').addEventListener('click',async()=>{
+    try{await request('/api/archive/stop',{session});tell('Stop requested. The current page may finish first.');}
+    catch(err){tell(err.message);}
+  });
+  let polling=false;
+  setInterval(async()=>{
+    if(!session || polling) return;
+    polling=true;
+    try {
+      const state=await get('/api/archive/session?session='+encodeURIComponent(session));
+      if(state.harvesting || wasHarvesting){
+        await refreshSession();
+      }
+    }catch(err){tell(err.message)}finally{polling=false;}
+  },3000);
   $('archive-filter-btn').addEventListener('click',async()=>{offset=0;try{await refreshIndex()}catch(err){tell(err.message)}});
   $('archive-prev-list-btn').addEventListener('click',()=>{offset=Math.max(0,offset-50);refreshIndex().catch(err=>tell(err.message));});
   $('archive-next-list-btn').addEventListener('click',()=>{offset+=50;refreshIndex().catch(err=>tell(err.message));});

@@ -2,6 +2,8 @@
 from __future__ import annotations
 import hashlib
 import re
+import time
+import zipfile
 from pathlib import Path
 from urllib.parse import urljoin
 import requests
@@ -17,11 +19,12 @@ def clean_part(value: str, fallback: str = "Unknown") -> str:
 
 
 def safe_get(url: str, source: str):
-    """Reject untrusted redirects and URLs before reading response bodies."""
+    """Validate every redirect, never following untrusted or private hosts."""
     for _ in range(6):
         if not allowed_url(url, source):
             raise ValueError("Untrusted download host or URL")
-        response = requests.get(url, headers=HEADERS, stream=True, timeout=(8, 60), allow_redirects=False)
+        response = requests.get(url, headers=HEADERS, stream=True,
+                                timeout=(12, 65), allow_redirects=False)
         if response.status_code in (301, 302, 303, 307, 308):
             location = response.headers.get("Location")
             response.close()
@@ -29,9 +32,23 @@ def safe_get(url: str, source: str):
                 raise ValueError("Redirect with no destination")
             url = urljoin(url, location)
             continue
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except requests.RequestException:
+            response.close()
+            raise
         return response
     raise ValueError("Too many redirects")
+
+
+def _transient_download_failure(exc: Exception) -> bool:
+    """Retry transient GET failures, never HTTP 403/404 or unsafe URLs."""
+    if isinstance(exc, (requests.exceptions.Timeout, requests.exceptions.ConnectionError)):
+        return True
+    if isinstance(exc, requests.exceptions.HTTPError):
+        code = exc.response.status_code if exc.response is not None else None
+        return code in (429, 500, 502, 503, 504)
+    return False
 
 
 def run_download(store: Store, library_dir: Path, job_id: int):
@@ -42,31 +59,40 @@ def run_download(store: Store, library_dir: Path, job_id: int):
     library_dir.mkdir(parents=True, exist_ok=True)
     name = clean_part(job["author"]) + " - " + clean_part(job["title"]) + " [" + clean_part(job["source"]) + "]." + job["format"]
     dest = library_dir / name
-    # Job suffix makes names unique across worker threads and title collisions.
     dest = library_dir / (dest.stem + f" [job-{job_id}]" + dest.suffix)
     part = library_dir / f".{job_id}.part"
     transferred = 0
-    digest = hashlib.sha256()
     try:
-        with safe_get(job["url"], job["source"]) as response:
-            length = response.headers.get("Content-Length", "")
-            if length and int(length) > MAX_FILE_BYTES:
-                raise ValueError("File exceeds 350 MiB size limit")
-            ctype = response.headers.get("Content-Type", "").lower()
-            if "text/html" in ctype or "application/json" in ctype:
-                raise ValueError("Server supplied a page/error instead of an ebook file")
-            with part.open("wb") as out:
-                for chunk in response.iter_content(chunk_size=CHUNK):
-                    if not chunk:
-                        continue
-                    transferred += len(chunk)
-                    if transferred > MAX_FILE_BYTES:
+        # A failed stream is retried just once, from byte zero, with a new hash.
+        for attempt in range(2):
+            transferred = 0
+            digest = hashlib.sha256()
+            try:
+                with safe_get(job["url"], job["source"]) as response:
+                    length = response.headers.get("Content-Length", "")
+                    if length and int(length) > MAX_FILE_BYTES:
                         raise ValueError("File exceeds 350 MiB size limit")
-                    out.write(chunk)
-                    digest.update(chunk)
+                    ctype = response.headers.get("Content-Type", "").lower()
+                    if "text/html" in ctype or "application/json" in ctype:
+                        raise ValueError("Server supplied a page/error instead of an ebook file")
+                    with part.open("wb") as out:
+                        for chunk in response.iter_content(chunk_size=CHUNK):
+                            if not chunk:
+                                continue
+                            transferred += len(chunk)
+                            if transferred > MAX_FILE_BYTES:
+                                raise ValueError("File exceeds 350 MiB size limit")
+                            out.write(chunk)
+                            digest.update(chunk)
+                break
+            except requests.RequestException as exc:
+                if attempt == 0 and _transient_download_failure(exc):
+                    part.unlink(missing_ok=True)
+                    time.sleep(1.0)
+                    continue
+                raise
         if transferred < 100:
             raise ValueError("Downloaded file is unexpectedly small")
-        # Minimal format signature check avoids saving obvious HTML or error pages.
         with part.open("rb") as check:
             header = check.read(256).lstrip()
         if header[:15].lower().startswith((b"<!doctype html", b"<html", b"<?xml")):
@@ -75,6 +101,8 @@ def run_download(store: Store, library_dir: Path, job_id: int):
             raise ValueError("Downloaded file does not appear to be a PDF")
         if job["format"] == "epub" and not header.startswith(b"PK"):
             raise ValueError("Downloaded file does not appear to be an EPUB archive")
+        if job["format"] == "epub" and not zipfile.is_zipfile(part):
+            raise ValueError("Downloaded EPUB has an invalid ZIP structure")
         part.replace(dest)
         store.update(job_id, "complete", str(dest), transferred, sha256=digest.hexdigest())
     except Exception as exc:

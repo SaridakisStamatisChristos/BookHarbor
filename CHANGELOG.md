@@ -6,7 +6,7 @@
 
 **Degraded-mode support:** When OAPEN's REST search rejects requests, an official OAI-PMH metadata sample is available. The sample is explicitly partial and cannot promise direct files or complete search coverage.
 
-**Testing:** GitHub Actions now runs the offline test suite and live bounded downloads on the experimental branch. See [provider stability report](PROVIDER_STABILITY_V02.md) for limitations and recorded evidence.
+**Testing:** GitHub Actions verified **30 offline tests** and three complete networked downloads (Gutenberg EPUB, Archive TXT, Standard Ebooks EPUB). See [live run and limitations](LIVE_INTEGRATION_RESULTS.md) and [provider patch details](PROVIDER_STABILITY_V02.md).
 
 ## v0.2 — experimental branch
 

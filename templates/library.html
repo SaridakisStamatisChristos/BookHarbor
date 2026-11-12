@@ -1,0 +1,11 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="libraryhero"><div class="eyebrow">YOUR LOCAL COLLECTION</div><h1>My Library</h1><p>Files stay on this computer. Open your saved books here or visit the library folder.</p><div class="folder">{{folder}}</div></section>
+<section class="results"><div class="sectionheading"><h2>Download history</h2><a class="small link" href="/">Find more books ↗</a></div>
+{% if jobs %}
+<div class="table-scroll"><table><thead><tr><th>Title</th><th>Source</th><th>Format</th><th>Status</th><th>File</th></tr></thead><tbody>
+{% for j in jobs %}<tr><td><strong>{{j.title}}</strong><br><small>{{j.author}}</small></td><td>{{j.source}}</td><td>{{j.format|upper}}</td><td><span class="status status-{{j.status}}">{{j.status}}</span>{% if j.error %}<div class="error">{{j.error}}</div>{% endif %}</td><td>{% if j.status == 'complete' %}<a href="/file/{{j.id}}">Download local file ↓</a>{% else %}—{% endif %}</td></tr>{% endfor %}
+</tbody></table></div>
+{% else %}<div class="empty">No downloads yet. Search for a title and select an available format.</div>{% endif %}
+</section>
+{% endblock %}

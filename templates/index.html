@@ -1,0 +1,69 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="hero">
+  <div class="eyebrow">YOUR PERSONAL DIGITAL BOOK HUNTER</div>
+  <h1>Find books.<br><em>Keep knowledge.</em></h1>
+  <p>Search free-book catalogs from one local dashboard. Download openly available EPUB, PDF, MOBI and TXT editions to your computer.</p>
+  <form class="search" method="get" action="/">
+    <input name="q" placeholder="Search a title, writer or subject…" value="{{query}}" minlength="2" required autofocus>
+    <button type="submit">Search books ↗</button>
+    <div class="search-options">
+      <label>Catalog
+      <select name="source">
+      <option value="all" {% if source == 'all' %}selected{% endif %}>All sources</option>
+      <option value="gutenberg" {% if source == 'gutenberg' %}selected{% endif %}>Project Gutenberg</option>
+      <option value="archive" {% if source == 'archive' %}selected{% endif %}>Internet Archive</option>
+      <option value="openlibrary" {% if source == 'openlibrary' %}selected{% endif %}>Open Library (public)</option>
+      <option value="standard" {% if source == 'standard' %}selected{% endif %}>Standard Ebooks (recent)</option>
+      </select></label>
+      <label>Language code <input type="text" name="language" maxlength="3" placeholder="any · en · el" value="{{language}}"></label>
+    </div>
+  </form>
+</section>
+<section class="metrics">
+  <div><strong>4</strong><small>catalogs connected</small></div>
+  <div><strong>4</strong><small>ebook formats</small></div>
+  <div><strong>{{total}}</strong><small>completed downloads</small></div>
+  <div class="directory">Local folder <span title="{{library}}">{{library}}</span></div>
+</section>
+{% if warnings %}
+<div class="alert"><b>Some catalogs could not be reached:</b>
+<ul>{% for warning in warnings %}<li>{{warning}}</li>{% endfor %}</ul></div>
+{% endif %}
+<section class="results">
+  {% if query %}
+  <div class="sectionheading"><div><div class="eyebrow">CATALOG RESULTS</div><h2>{{books|length}} matches for “{{query}}”</h2></div><div class="hint">Results are a small preview from each catalog, not an exhaustive crawl.</div></div>
+  {% if not books %}<div class="empty">Nothing surfaced in these public catalogs. Try a shorter title or search by author.</div>{% endif %}
+  {% if books %}<div class="batchbar"><span>Select up to 10 results to queue downloads together.</span>
+  <label>Preferred format <select id="batch-pref"><option value="auto">Auto (EPUB first)</option><option value="epub">EPUB</option><option value="pdf">PDF</option><option value="txt">TXT</option><option value="mobi">MOBI</option></select></label>
+  <button id="batch-download" class="small primary">↓ Download selected</button></div>{% endif %}
+  <div class="bookgrid">
+  {% for b in books %}
+    <article class="bookcard">
+      <div class="cardhead"><label class="selectbook"><input class="batch-choice" type="checkbox" value="{{b.selection_token}}" aria-label="Select {{b.title}}"> Select</label><span class="source source-{{b.source}}">{{b.source.replace('openlibrary', 'Open Library').replace('gutenberg','Gutenberg').replace('archive','Internet Archive').replace('standard','Standard Ebooks')}}</span><span class="year">{{b.year}}</span></div>
+      <div class="booksymbol">{{['◈','✦','◇','▣'][loop.index0%4]}}</div>
+      <h3>{{b.title}}</h3><div class="author">{{b.author}}</div>
+      <div class="access">{{b.access}}</div>
+      <div class="button-row">
+      {% for offer in b.download_options %}<button class="small primary download-btn" data-token="{{offer.token}}">↓ {{offer.fmt}}</button>{% endfor %}
+      {% if b.inspect_token %}<button class="small inspect-btn" data-token="{{b.inspect_token}}">Find files</button>{% endif %}
+      <a class="small link" target="_blank" rel="noopener noreferrer" href="{{b.page}}">Catalog ↗</a>
+      </div>
+      <div class="cardstatus" aria-live="polite"></div>
+    </article>
+  {% endfor %}
+  </div>
+  {% else %}
+  <div class="startcontent">
+    <div class="eyebrow">BUILT FOR PERSONAL RESEARCH</div><h2>One search. Several libraries.</h2>
+    <div class="sourcesgrid">
+      <div><span>01</span><strong>Project Gutenberg</strong><p>Public-domain literature. Search via Gutendex, download eligible files.</p></div>
+      <div><span>02</span><strong>Internet Archive</strong><p>Explore the texts collection. File availability checked individually.</p></div>
+      <div><span>03</span><strong>Open Library</strong><p>Find public scans, with actual files checked at the Archive.</p></div>
+      <div><span>04</span><strong>Standard Ebooks</strong><p>Search only its public recent-releases feed (not the complete patron catalog).</p></div>
+    </div>
+  </div>
+  {% endif %}
+</section>
+<div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+{% endblock %}

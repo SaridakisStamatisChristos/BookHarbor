@@ -3,7 +3,7 @@
 **Provider stabilization (feature branch):** Gutenberg OPDS fallback, Archive alternate-node retries, Open Library public-scan filtering, and OAPEN's partial OAI metadata fallback are documented in [PROVIDER_STABILITY_V02.md](PROVIDER_STABILITY_V02.md). The OAPEN fallback is **not** a full searchable or downloadable catalog; see the live CI evidence before relying on a source.
 
 
-**Experimental branch:** `feature/bookharbor-v0.2-library-upgrade`. See the [v0.2 upgrade guide](UPGRADE_V0_2.md), [changelog](CHANGELOG.md), and [base installation instructions](INSTALLATION.md). The stable `main` branch remains v0.1. This branch contains 21 passing offline tests; live provider integrations need testing.
+**Experimental branch:** `feature/bookharbor-v0.2-library-upgrade`. See the [v0.2 upgrade guide](UPGRADE_V0_2.md), [changelog](CHANGELOG.md), and [base installation instructions](INSTALLATION.md). The stable `main` branch remains v0.1. This branch has **30 passing offline tests** and verified real downloads from Gutenberg, Internet Archive, and Standard Ebooks. See [live results](LIVE_INTEGRATION_RESULTS.md). OAPEN direct downloads remain unverified.
 
 **v0.2 changes:** Fifth source (**OAPEN academic books**), duplicate-safe queues, SHA-256 checksums with verify buttons, library search/status filters, CSV export, retries for failed/interrupted jobs, and safer filenames.
 
@@ -19,7 +19,7 @@ A **local web application** for finding and downloading openly available ebooks 
 | **Internet Archive** | Advanced Search JSON + individual Metadata API | Downloads only files marked public in metadata, in supported formats. Private/restricted/lending-only items are excluded. Server can still reject the download. |
 | **Open Library** | Search API with `ebook_access=public` | Find public-domain/publicly accessible scans, then check their Internet Archive files if a compatible identifier exists. |
 | **Standard Ebooks** | Public **new releases** Atom feed only | Shows matching recent books; can download only if the feed contains a direct EPUB/PDF/TXT/MOBI enclosure. The complete OPDS feed requires membership. |
-| **OAPEN** | Official academic repository REST API | Discovers open-access academic titles; only OAPEN-hosted public EPUB/PDF/TXT/MOBI links from item metadata are offered. |
+| **OAPEN** | Official REST API, or limited OAI-PMH fallback when REST is blocked | OAI fallback is a **partial recent metadata sample** and may show item links without direct downloadable files. |
 
 OAPEN academic search is integrated in v0.2. **DOAB** (https://www.doabooks.org/) and **OpenStax** (https://openstax.org/) remain prospective future integrations.
 
@@ -147,7 +147,7 @@ python -m pip install pytest httpx
 python -m pytest -q
 ```
 
-The **21 included offline tests** use mock catalog responses and fake file content; they do **not** exercise live upstream web services.
+The **30 offline tests** use controlled simulated responses. A separate networked CI smoke test has successfully downloaded Gutenberg EPUB, Archive TXT, and Standard Ebooks EPUB files. See [verification and limitations](LIVE_INTEGRATION_RESULTS.md).
 
 ## Technical structure
 
@@ -167,7 +167,7 @@ BookHarbor_v0_1/
 
 ## Next improvements (not implemented in v0.1)
 
-- Academic open-access integrations: DOAB, OAPEN, OpenStax, national libraries.
+- Additional academic open-access integrations: DOAB, OpenStax, national libraries. Upgrade OAPEN fallback to a full user-approved local metadata index.
 - Metadata and cover caching; duplicate matching across catalogs.
 - Full-text indexing of locally owned books.
 - Resume partial downloads and per-source bandwidth controls.

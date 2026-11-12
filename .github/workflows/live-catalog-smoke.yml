@@ -34,7 +34,7 @@ jobs:
       - name: Run real ebook catalog and download smoke tests
         env:
           BOOKHARBOR_CONTACT: https://github.com/SaridakisStamatisChristos/BookHarbor
-        run: python tests/live_catalog_smoke.py
+        run: PYTHONPATH=. python tests/live_catalog_smoke.py
       - name: Store machine-readable smoke report
         if: always()
         uses: actions/upload-artifact@v4

@@ -17,6 +17,22 @@ For scholarly open access, we suggest the **Directory of Open Access Books** (ht
 
 This app does **not** bypass DRM, paid access, borrowing time limits, login requirements, anti-bot measures, or source access policies. Search via APIs is preferable to uncontrolled HTML scraping.
 
+## Clone and start directly from GitHub
+
+On Linux Mint / Ubuntu:
+
+```bash
+sudo apt update
+sudo apt install -y git python3 python3-venv python3-pip
+git clone https://github.com/SaridakisStamatisChristos/BookHarbor.git
+cd BookHarbor
+./run.sh
+```
+
+Then open **http://127.0.0.1:8765**. The launcher is executable in Git.
+
+Alternatively, download the [v0.1 release ZIP](releases/BookHarbor_v0_1_Linux_Windows.zip), extract it, and follow the platform setup steps below.
+
 ## Linux Mint / Ubuntu installation
 
 Open **Terminal** in the extracted `BookHarbor_v0_1` folder.

@@ -1,5 +1,7 @@
 # BookHarbor v0.2 — Experimental Local Ebook Finder
 
+**New:** [Chromium Playwright end-to-end tests](PLAYWRIGHT_E2E.md) now exercise the real Archive Explorer browser UI, local server, SQLite and download queue automatically in GitHub Actions.
+
 ## Experimental v0.3 — Internet Archive Explorer
 The v0.3 preview also supports **bounded background indexing** (up to 50 pages/5,000 records per user-initiated batch), can stop/resume persisted searches, and falls back to standard pagination when Internet Archive repeats a scrape cursor. Standard pagination is limited to 10,000 results per query.
 

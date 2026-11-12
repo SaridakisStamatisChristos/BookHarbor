@@ -7,7 +7,7 @@ import zipfile
 from pathlib import Path
 from urllib.parse import urljoin
 import requests
-from .providers import allowed_url, HEADERS, MAX_FILE_BYTES
+from .providers import allowed_url, archive_mirror_urls, HEADERS, MAX_FILE_BYTES
 from .storage import Store
 
 CHUNK = 128 * 1024
@@ -63,12 +63,16 @@ def run_download(store: Store, library_dir: Path, job_id: int):
     part = library_dir / f".{job_id}.part"
     transferred = 0
     try:
-        # A failed stream is retried just once, from byte zero, with a new hash.
-        for attempt in range(2):
+        # Retry the canonical URL, then try up to two public, metadata-approved
+        # Archive storage nodes if the Archive CDN stalls. Never concatenate.
+        urls = [job['url'], job['url']]
+        for attempt in range(4):
+            if attempt >= len(urls):
+                break
             transferred = 0
             digest = hashlib.sha256()
             try:
-                with safe_get(job["url"], job["source"]) as response:
+                with safe_get(urls[attempt], job["source"]) as response:
                     length = response.headers.get("Content-Length", "")
                     if length and int(length) > MAX_FILE_BYTES:
                         raise ValueError("File exceeds 350 MiB size limit")
@@ -86,11 +90,15 @@ def run_download(store: Store, library_dir: Path, job_id: int):
                             digest.update(chunk)
                 break
             except requests.RequestException as exc:
-                if attempt == 0 and _transient_download_failure(exc):
-                    part.unlink(missing_ok=True)
-                    time.sleep(1.0)
-                    continue
-                raise
+                if not _transient_download_failure(exc):
+                    raise
+                if attempt == 1 and job["source"] in ("archive", "openlibrary"):
+                    urls.extend(archive_mirror_urls(job["book_id"], job["url"])[:2])
+                if attempt + 1 >= len(urls):
+                    raise
+                part.unlink(missing_ok=True)
+                time.sleep(1.0)
+                continue
         if transferred < 100:
             raise ValueError("Downloaded file is unexpectedly small")
         with part.open("rb") as check:

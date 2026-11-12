@@ -110,3 +110,21 @@ def test_redirect_host_restriction(monkeypatch):
     monkeypatch.setattr(d.requests,'get',lambda *a,**k:Redirect())
     with pytest.raises(ValueError,match='Untrusted'):
         d.safe_get('https://archive.org/download/book/example.pdf','archive')
+
+
+def test_archive_mirror_fallback_preserved(tmp_path,monkeypatch):
+    store,job,root=setup(tmp_path)
+    url=store.get(job)['url']
+    alt='https://ia600308.us.archive.org/12/items/id123/sample.txt'
+    calls=[]
+    monkeypatch.setattr(d,'archive_mirror_urls',lambda ident, canonical:[alt])
+    monkeypatch.setattr(d.time,'sleep',lambda _:None)
+    def switch(candidate,source):
+        calls.append(candidate)
+        if len(calls)<=2:
+            raise requests.exceptions.Timeout('CDN unavailable')
+        return Response(b'Public-domain text ' * 120)
+    monkeypatch.setattr(d,'safe_get',switch)
+    d.run_download(store,root,job)
+    assert calls == [url,url,alt]
+    assert store.get(job)['status']=='complete'

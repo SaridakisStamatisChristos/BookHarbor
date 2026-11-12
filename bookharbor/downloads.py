@@ -15,7 +15,7 @@ from urllib.parse import urljoin
 
 import requests
 
-from .providers import allowed_url, HEADERS, MAX_FILE_BYTES
+from .providers import allowed_url, archive_mirror_urls, HEADERS, MAX_FILE_BYTES
 from .storage import Store
 
 CHUNK = 128 * 1024
@@ -159,18 +159,31 @@ def run_download(store: Store, library_dir: Path, job_id: int):
     meta = library_dir / ('.partial-' + key + '.json')
     transferred = 0
     try:
-        for attempt in range(2):
+        # Preserve v0.2's approved Archive mirror fallback. Retry canonical twice
+        # before trying at most two Archive metadata-approved alternate nodes.
+        urls = [job['url'], job['url']]
+        for attempt in range(4):
+            if attempt >= len(urls):
+                break
+            candidate = urls[attempt]
+            if candidate != job['url']:
+                # A mirror's validator cannot be presumed identical to canonical.
+                part.unlink(missing_ok=True)
+                meta.unlink(missing_ok=True)
             offset, prior_validator = _load_partial(part, meta, job['url'])
             extras = {'Range':f'bytes={offset}-', 'If-Range':prior_validator} if offset else None
             validator = prior_validator if offset else None
             transferred = 0
             try:
-                with (safe_get(job['url'], job['source'], extra_headers=extras) if extras
-                      else safe_get(job['url'], job['source'])) as response:
+                with (safe_get(candidate, job['source'], extra_headers=extras) if extras
+                      else safe_get(candidate, job['source'])) as response:
                     mode, expected_total = _check_response(response, offset)
                     if mode == 'wb':
                         offset = 0
-                    validator = _validator(response.headers) or (prior_validator if mode == 'ab' else None)
+                    returned_validator = _validator(response.headers)
+                    if mode == 'ab' and returned_validator and returned_validator != prior_validator:
+                        raise ValueError('Resume validator mismatch')
+                    validator = returned_validator or (prior_validator if mode == 'ab' else None)
                     with part.open(mode) as stream:
                         # Store validator before reading so interruption can resume.
                         # Once a write fails we update the recorded file size.
@@ -199,10 +212,16 @@ def run_download(store: Store, library_dir: Path, job_id: int):
                 transferred = size
                 # Preserve only verified-range-capable partial files on temporary errors.
                 if _transient(exc):
-                    _save_partial(meta, job['url'], size, locals().get('validator', None))
+                    if candidate == job['url']:
+                        _save_partial(meta, job['url'], size, validator)
+                    else:
+                        part.unlink(missing_ok=True)
+                        meta.unlink(missing_ok=True)
+                    if attempt == 1 and job['source'] in ('archive','openlibrary'):
+                        urls.extend(archive_mirror_urls(job['book_id'], job['url'])[:2])
                     if not meta.exists():
                         part.unlink(missing_ok=True)
-                    if attempt == 0:
+                    if attempt + 1 < len(urls):
                         time.sleep(.75)
                         continue
                 else:

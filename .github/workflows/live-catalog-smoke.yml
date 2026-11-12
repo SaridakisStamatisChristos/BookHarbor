@@ -8,6 +8,7 @@ on:
     paths:
       - 'tests/live_catalog_smoke.py'
       - 'tests/live_archive_explorer_smoke.py'
+      - 'tests/scrape_cursor_probe.py'
       - 'tests/test_archive_explorer.py'
       - 'tests/test_resume_v03.py'
       - 'tests/provider_probe.py'
@@ -46,6 +47,8 @@ jobs:
         env:
           BOOKHARBOR_CONTACT: https://github.com/SaridakisStamatisChristos/BookHarbor
         run: PYTHONPATH=. python tests/live_catalog_smoke.py
+      - name: Diagnose Archive cursor cache behavior
+        run: PYTHONPATH=. python tests/scrape_cursor_probe.py
       - name: Live Internet Archive cursor discovery smoke test
         run: PYTHONPATH=. python tests/live_archive_explorer_smoke.py
       - name: Store machine-readable smoke report

@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2 provider stability patch — 12 November 2026
+
+**Fixed:** Gutendex search failures can fall back to Gutenberg's official OPDS feed. Network-interrupted downloads restart from byte zero; validated alternate Internet Archive storage hosts are attempted only after transient CDN failures and public-file revalidation. EPUB files require valid ZIP structure. Open Library searches request public scans explicitly.
+
+**Degraded-mode support:** When OAPEN's REST search rejects requests, an official OAI-PMH metadata sample is available. The sample is explicitly partial and cannot promise direct files or complete search coverage.
+
+**Testing:** GitHub Actions now runs the offline test suite and live bounded downloads on the experimental branch. See [provider stability report](PROVIDER_STABILITY_V02.md) for limitations and recorded evidence.
+
 ## v0.2 — experimental branch
 
 **Added:** OAPEN academic open-access catalog search; SHA-256 hash recording and verification; filtered local download history; safe CSV export; failed/interrupted job retry; isolated-branch upgrade guidance.

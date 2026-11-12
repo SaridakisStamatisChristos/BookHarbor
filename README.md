@@ -1,5 +1,10 @@
 # BookHarbor v0.2 — Experimental Local Ebook Finder
 
+## Experimental v0.3 — Internet Archive Explorer
+
+A separate feature branch adds [Archive Explorer](ARCHIVE_EXPLORER_V03.md): persistent local metadata indexing via the official cursor-search API, deep pagination, advanced filters, public-file inspection, and resumable downloads with HTTP validator checks. Open `/archive` when running that branch. The stable `main` branch is unchanged until verification and promotion.
+
+
 **Provider stabilization (feature branch):** Gutenberg OPDS fallback, Archive alternate-node retries, Open Library public-scan filtering, and OAPEN's partial OAI metadata fallback are documented in [PROVIDER_STABILITY_V02.md](PROVIDER_STABILITY_V02.md). The OAPEN fallback is **not** a full searchable or downloadable catalog; see the live CI evidence before relying on a source.
 
 

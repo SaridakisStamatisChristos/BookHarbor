@@ -1,4 +1,11 @@
-# Changelog
+# BookHarbor Change Log
+
+## v0.3 (feature branch preview)
+- Internet Archive deep cursor-based catalog exploration and persistent local search sessions
+- Explicit public-file availability checks and safe selective download queueing
+- Validator-gated HTTP Range resume, integrity checks and anti-corruption tests
+- Provider-backed, bounded live Archive discovery smoke test
+
 
 ## v0.2 provider stability patch — 12 November 2026
 

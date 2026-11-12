@@ -14,3 +14,18 @@
 @media(max-width:590px){.library-search input,.library-search select{min-width:160px}.libraryhero h1{font-size:43px}}
 
 .source-oapen{background:#263746;color:#b3d6ee}
+
+/* v0.3 Archive Explorer */
+.archive-hero {padding-bottom:1.4rem}
+.explorer-panel,.archive-item {border:1px solid var(--line, #626262);border-radius:12px;padding:1.2rem;margin:1rem 0}
+.archive-form-grid {display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:.85rem}
+.archive-form-grid label,.archive-toolbar label {display:flex;flex-direction:column;gap:.3rem;font-size:.88rem}
+.archive-form-grid input,.archive-toolbar input,.archive-toolbar select {width:100%;padding:.55rem;border-radius:7px}
+.archive-explainer {font-size:.88rem;opacity:.8;line-height:1.6}
+.archive-toolbar {display:flex;align-items:end;gap:1rem;flex-wrap:wrap;margin:1rem 0}
+.archive-item {display:flex;flex-direction:column;gap:.5rem}
+.archive-item-head {display:flex;align-items:center;gap:1rem}
+.archive-item-meta {opacity:.8;font-size:.88rem}
+.archive-actions {display:flex;gap:.5rem;flex-wrap:wrap}
+.archive-status {font-size:.84rem}
+#archive-message {min-height:2rem}

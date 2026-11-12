@@ -6,6 +6,9 @@ on:
       - feature/bookharbor-v0.2-library-upgrade
     paths:
       - 'tests/live_catalog_smoke.py'
+      - 'tests/live_archive_explorer_smoke.py'
+      - 'tests/test_archive_explorer.py'
+      - 'tests/test_resume_v03.py'
       - 'tests/provider_probe.py'
       - 'tests/test_providers.py'
       - 'tests/test_downloads.py'
@@ -42,6 +45,8 @@ jobs:
         env:
           BOOKHARBOR_CONTACT: https://github.com/SaridakisStamatisChristos/BookHarbor
         run: PYTHONPATH=. python tests/live_catalog_smoke.py
+      - name: Live Internet Archive cursor discovery smoke test
+        run: PYTHONPATH=. python tests/live_archive_explorer_smoke.py
       - name: Store machine-readable smoke report
         if: always()
         uses: actions/upload-artifact@v4

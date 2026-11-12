@@ -21,6 +21,7 @@ from bookharbor.providers import (
     CatalogError, SOURCES, allowed_url, archive_formats, safe_identifier, preferred_format,
 )
 from bookharbor.storage import Store
+from bookharbor.archive_explorer import ArchiveCatalog, ArchiveFilters
 
 APP_ROOT = Path(__file__).resolve().parent
 HOME = Path(os.environ.get("BOOKHARBOR_HOME", str(Path.home() / ".local/share/bookharbor"))).expanduser().resolve()
@@ -41,6 +42,7 @@ if not KEY_FILE.exists():
 SECRET = KEY_FILE.read_text(encoding="utf8").strip()
 signer = URLSafeTimedSerializer(SECRET, salt="bookharbor-downloads-v1")
 store = Store(HOME / "jobs.sqlite3")
+archive_catalog = ArchiveCatalog(HOME / "archive_catalog.sqlite3")
 download_executor = ThreadPoolExecutor(max_workers=2)
 
 app = FastAPI(title="BookHarbor", docs_url=None, redoc_url=None, openapi_url=None)
@@ -80,6 +82,125 @@ def searchable_book(book: dict) -> dict:
         payload = {k: book[k] for k in ("source", "id", "title", "author")}
         record["inspect_token"] = mint_token(payload)
     return record
+
+
+# Internet Archive discovery: metadata-only deep cursor search. Never auto-download
+# books while indexing; file availability always requires a separate check.
+
+
+def _archive_action(request: Request):
+    if request.headers.get('content-type', '').split(';')[0].strip().lower() != 'application/json':
+        raise HTTPException(status_code=415, detail='JSON required')
+    if request.headers.get('x-bookharbor-action') != 'archive-explorer':
+        raise HTTPException(status_code=403, detail='Local explorer action header required')
+
+
+async def _archive_body(request: Request) -> dict:
+    _archive_action(request)
+    if len(await request.body()) > 4096:
+        raise HTTPException(status_code=413, detail='Request too large')
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(status_code=400, detail='Invalid JSON')
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail='Expected JSON object')
+    return body
+
+
+@app.get('/archive')
+def archive_page(request: Request):
+    return templates.TemplateResponse(request, 'archive.html', {
+        'archive_stats': archive_catalog.stats()
+    })
+
+
+@app.post('/api/archive/start')
+async def archive_start(request: Request):
+    body = await _archive_body(request)
+    try:
+        return await run_in_threadpool(archive_catalog.start, body)
+    except (ValueError, CatalogError) as exc:
+        return JSONResponse({'error': str(exc)}, status_code=400 if isinstance(exc, ValueError) else 502)
+
+
+@app.post('/api/archive/next')
+async def archive_next(request: Request):
+    body = await _archive_body(request)
+    try:
+        return await run_in_threadpool(archive_catalog.next_page, str(body.get('session') or ''))
+    except (ValueError, CatalogError) as exc:
+        return JSONResponse({'error': str(exc)}, status_code=400 if isinstance(exc, ValueError) else 502)
+
+
+@app.get('/api/archive/session')
+def archive_status(session: str = ''):
+    try:
+        return archive_catalog.session_status(session)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@app.get('/api/archive/items')
+def archive_items(session: str = '', q: str = '', access: str = 'all',
+                  offset: int = 0, limit: int = 50):
+    try:
+        found = archive_catalog.list_items(session, q[:120], access, offset, limit)
+        # Only issue download tokens for verified formats, never for raw metadata.
+        found['items'] = [{**searchable_book(book),
+                           'language': book.get('language',''),
+                           'subject': book.get('subject',''),
+                           'collection': book.get('collection',''),
+                           'availability': book['access']}
+                          for book in found['items']]
+        return found
+    except ValueError as exc:
+        return JSONResponse({'error': str(exc)}, status_code=400)
+
+
+@app.get('/api/archive/stats')
+def archive_stats():
+    return archive_catalog.stats()
+
+
+@app.post('/api/archive/inspect')
+async def archive_inspect(request: Request):
+    body = await _archive_body(request)
+    identifier = str(body.get('id') or '')
+    book = archive_catalog.record(identifier)
+    if not book:
+        return JSONResponse({'error':'Item was not indexed in the local catalog'}, status_code=404)
+    try:
+        files = await run_in_threadpool(archive_formats, identifier)
+        archive_catalog.mark_formats(identifier, files)
+        record = searchable_book(archive_catalog.record(identifier))
+        return {'id':identifier, 'availability':'public' if files else 'unavailable',
+                'options':record['download_options'],
+                'message':'No openly downloadable EPUB/PDF/TXT/MOBI was found.' if not files else ''}
+    except CatalogError as exc:
+        return JSONResponse({'error':str(exc)}, status_code=502)
+
+
+@app.post('/api/archive/verify-selected')
+async def archive_verify_selected(request: Request):
+    body = await _archive_body(request)
+    identifiers = body.get('ids')
+    if (not isinstance(identifiers,list) or not 1 <= len(identifiers) <= 5 or
+            len(set(str(x) for x in identifiers)) != len(identifiers)):
+        return JSONResponse({'error':'Select 1 to 5 unique indexed items'}, status_code=400)
+    results=[]
+    for identifier in identifiers:
+        if not isinstance(identifier,str) or not archive_catalog.record(identifier):
+            results.append({'id':str(identifier)[:100], 'status':'not indexed'})
+            continue
+        try:
+            offers = await run_in_threadpool(archive_formats, identifier)
+            archive_catalog.mark_formats(identifier,offers)
+            results.append({'id':identifier, 'status':'public' if offers else 'unavailable',
+                            'formats':sorted(offers)})
+        except CatalogError as exc:
+            results.append({'id':identifier,'status':'error','error':str(exc)[:160]})
+    return {'results': results}
 
 
 @app.get("/")

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero archive-hero">
+  <div class="eyebrow">INTERNET ARCHIVE · CURSOR SEARCH</div>
+  <h1>Explore the Archive</h1>
+  <p>Search historical texts beyond ordinary result-page limits, save metadata locally, and check which editions offer public files. <strong>Discovery does not download books.</strong></p>
+</section>
+<section class="explorer-panel">
+  <form id="archive-search-form">
+    <div class="archive-form-grid">
+      <label>Title, author or subject terms<input name="query" placeholder="e.g. algebra, ancient history" maxlength="120"></label>
+      <label>Author<input name="author" placeholder="e.g. Euler" maxlength="100"></label>
+      <label>Subject<input name="subject" placeholder="e.g. mathematics" maxlength="100"></label>
+      <label>Collection identifier<input name="collection" placeholder="e.g. americana" maxlength="100"></label>
+      <label>Language<input name="language" placeholder="en, el, fr …" maxlength="3"></label>
+      <label>Published after (year)<input name="year_from" type="number" min="1000" max="2100"></label>
+      <label>Published before (year)<input name="year_to" type="number" min="1000" max="2100"></label>
+    </div>
+    <p class="archive-explainer">Searches only item metadata. Archive cursor pagination fetches 100 records per click and can pass the 10,000-result limit of ordinary sorted pages. Results are saved locally; titles may be restricted, borrow-only, or have no suitable file.</p>
+    <button type="submit" id="archive-search-btn" class="primary">Search and index first 100</button>
+  </form>
+</section>
+<section class="metrics archive-metrics">
+  <div><strong id="indexed-total">{{archive_stats.indexed}}</strong><small>unique titles indexed locally</small></div>
+  <div><strong id="verified-total">{{archive_stats.public_verified}}</strong><small>confirmed public files</small></div>
+  <div><strong id="session-total">{{archive_stats.sessions}}</strong><small>saved searches</small></div>
+</section>
+<section id="archive-workspace" hidden>
+  <div class="sectionheading"><div><div class="eyebrow">CURRENT INDEX SESSION</div><h2 id="archive-counter">0 records</h2></div>
+    <div class="hint" id="archive-pages">No pages indexed</div></div>
+  <div class="archive-toolbar">
+    <button id="archive-next-btn" class="primary">Index next 100 records</button>
+    <label>Find indexed title<input id="archive-local-query" placeholder="Search your saved results"></label>
+    <label>Availability<select id="archive-access-filter"><option value="all">All indexed</option><option value="public">Verified public file</option><option value="unchecked">Not checked</option><option value="unavailable">No supported public file</option></select></label>
+    <button id="archive-filter-btn">Filter local index</button>
+  </div>
+  <p id="archive-message" role="status" aria-live="polite"></p>
+  <div class="archive-toolbar"><button id="archive-verify-btn">Check public files for up to 5 selected</button><button id="archive-download-btn" class="primary">Download up to 10 selected</button>
+  <label>File preference<select id="archive-format-pref"><option value="auto">EPUB first</option><option value="pdf">PDF</option><option value="epub">EPUB</option><option value="txt">TXT</option></select></label></div>
+  <div id="archive-results" class="archive-results"></div>
+  <div class="archive-toolbar"><button id="archive-prev-list-btn">Previous 50</button><span id="archive-list-range"></span><button id="archive-next-list-btn">Next 50</button></div>
+</section>
+<div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+<script src="{{ url_for('static', path='archive.js') }}" defer></script>
+{% endblock %}

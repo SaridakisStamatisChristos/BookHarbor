@@ -276,6 +276,42 @@ def archive_formats(identifier: str) -> dict[str, str]:
     return options
 
 
+def archive_mirror_urls(identifier: str, canonical: str) -> list[str]:
+    """Official Archive metadata may offer two redundant public storage nodes.
+
+    These links are *only* for an already approved open file. Do not use
+    arbitrary hosts, filenames, private files, or other item paths.
+    """
+    if not safe_identifier(identifier):
+        return []
+    expected_prefix = f"https://archive.org/download/{quote(identifier)}/"
+    if not canonical.startswith(expected_prefix):
+        return []
+    file_name = canonical[len(expected_prefix):]
+    if not safe_file_name(file_name) or "?" in file_name or "#" in file_name:
+        return []
+    # Recheck that the exact requested file is currently publicly offered.
+    try:
+        approved = archive_formats(identifier)
+        if canonical not in approved.values():
+            return []
+        md = get_json(f"https://archive.org/metadata/{quote(identifier)}")
+    except CatalogError:
+        return []
+    directory = str(md.get("dir") or "")
+    if not re.fullmatch(r"/[0-9]+/items/" + re.escape(identifier), directory):
+        return []
+    mirrors = []
+    for key in ("d1", "d2"):
+        host = str(md.get(key) or "").lower()
+        if not re.fullmatch(r"ia[0-9]{5,8}\.[a-z]{2}\.archive\.org", host):
+            continue
+        url = f"https://{host}{directory}/{file_name}"
+        if allowed_url(url, "archive") and url not in mirrors:
+            mirrors.append(url)
+    return mirrors
+
+
 def search_openlibrary(query: str, language: str = "", limit: int = MAX_RESULTS):
     # Discovery only; downloadable files resolve through Archive's public API.
     params = {"q": query, "limit": min(limit, 15), "public_scan": "true",

@@ -1,0 +1,48 @@
+name: BookHarbor Chromium end-to-end
+
+on:
+  push:
+    branches:
+      - main
+      - feature/bookharbor-v0.3-archive-explorer
+    paths:
+      - '.github/workflows/browser-e2e.yml'
+      - 'requirements-e2e.txt'
+      - 'app.py'
+      - 'bookharbor/**'
+      - 'templates/**'
+      - 'static/**'
+      - 'tests/test_playwright_e2e.py'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  chromium-browser-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PLAYWRIGHT_ARTIFACT_DIR: artifacts/playwright
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install application and Playwright test dependencies
+        run: python -m pip install -r requirements-e2e.txt
+      - name: Install Chromium and OS dependencies
+        run: python -m playwright install --with-deps chromium
+      - name: Run browser to real BookHarbor server, SQLite and download queue
+        run: PYTHONPATH=. python -m pytest tests/test_playwright_e2e.py -q
+      - name: Upload failure screenshots and browser trace
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookharbor-playwright-failures
+          path: artifacts/playwright/
+          if-no-files-found: ignore
+          retention-days: 14

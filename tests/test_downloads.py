@@ -91,3 +91,25 @@ def test_access_denied_not_retried(monkeypatch, tmp_path):
     d.run_download(store, tmp_path/'books', job)
     assert n[0] == 1
     assert store.get(job)['status']=='failed'
+
+
+def test_archive_retry_uses_only_approved_mirror(monkeypatch, tmp_path):
+    store = Store(tmp_path / 'history.sqlite3')
+    url = 'https://archive.org/download/book/book.pdf'
+    book = {'source': 'archive', 'id': 'book', 'title': 'Book', 'author': 'A'}
+    job = store.add(book, 'pdf', url)
+    calls = []
+    alt = 'https://ia600308.us.archive.org/12/items/book/book.pdf'
+    monkeypatch.setattr(d, 'archive_mirror_urls', lambda ident, canonical: [alt])
+    monkeypatch.setattr(d.time, 'sleep', lambda n: None)
+    def patched_safe_get(url, source):
+        calls.append(url)
+        if len(calls) <= 2:
+            raise requests.exceptions.Timeout('transient Archive CDN timeout')
+        return FakeResponse(b'%PDF-1.7\n' + b'PDF data ' * 90, 'application/pdf')
+    monkeypatch.setattr(d, 'safe_get', patched_safe_get)
+    d.run_download(store, tmp_path / 'books', job)
+    assert calls == [url, url, alt]
+    result = store.get(job)
+    assert result['status'] == 'complete'
+    assert Path(result['path']).read_bytes().startswith(b'%PDF-')

@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/bookharbor-v0.2-library-upgrade
+      - feature/bookharbor-v0.3-archive-explorer
     paths:
       - 'tests/live_catalog_smoke.py'
       - 'tests/live_archive_explorer_smoke.py'

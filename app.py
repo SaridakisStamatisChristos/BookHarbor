@@ -326,6 +326,10 @@ async def batch(request: Request):
                     if not safe_identifier(book.get("id", "")):
                         raise ValueError("No public Archive identifier")
                     formats_found = await run_in_threadpool(archive_formats, book["id"])
+                    # A batch inspection is also a public-file verification:
+                    # keep Explorer's availability index in sync with downloads.
+                    if source == "archive" and archive_catalog.record(book["id"]):
+                        await run_in_threadpool(archive_catalog.mark_formats, book["id"], formats_found)
                 choice = preferred_format(formats_found, preference)
                 if not choice:
                     raise ValueError("No open files found")

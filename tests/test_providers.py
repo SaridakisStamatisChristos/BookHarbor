@@ -169,3 +169,26 @@ def test_oapen_oai_fallback_labels_partial_discovery(monkeypatch):
     assert result[0]['formats'] == {}
     assert 'sample' in result[0]['access']
     p._oapen_oai_recent_records.cache_clear()
+
+
+def test_archive_mirror_urls_are_metadata_approved(monkeypatch):
+    identifier = 'public_book'
+    canonical = 'https://archive.org/download/public_book/book.pdf'
+    md = {'metadata': {'title': 'Public Book'},
+          'files': [{'name': 'book.pdf', 'size': '1024'}],
+          'dir': '/12/items/public_book',
+          'd1': 'ia600308.us.archive.org',
+          'd2': 'ia800308.us.archive.org'}
+    monkeypatch.setattr(p, 'get_json', lambda *a, **kw: md)
+    urls = p.archive_mirror_urls(identifier, canonical)
+    assert len(urls) == 2
+    assert urls[0] == 'https://ia600308.us.archive.org/12/items/public_book/book.pdf'
+    md['metadata']['lending___status'] = 'LENDABLE'
+    assert p.archive_mirror_urls(identifier, canonical) == []
+    md['metadata'] = {}
+    md['dir'] = '/12/items/../private_book'
+    assert p.archive_mirror_urls(identifier, canonical) == []
+    md['dir'] = '/12/items/public_book'
+    md['d1'] = 'internal.evil.invalid'
+    urls = p.archive_mirror_urls(identifier, canonical)
+    assert len(urls) == 1

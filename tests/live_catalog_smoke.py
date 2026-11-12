@@ -125,7 +125,15 @@ def main() -> int:
         try:
             books = providers.search_standard("", "en", limit=12)
             record("standard", "feed", "PASS" if books else "WARN",
-                   f"{len(books)} recent-release feed entries")
+                   f"{len(books)} recent-release feed entries",
+                   format_counts={kind: sum(kind in b.get("formats", {}) for b in books)
+                                  for kind in ("epub", "pdf", "txt", "mobi")})
+            offer = find_offer(books, ("epub", "txt", "pdf"))
+            if offer:
+                actual_download(*offer, temp)
+            else:
+                record("standard", "download", "SKIP",
+                       "No direct EPUB, TXT or PDF enclosure in public recent feed")
         except Exception as exc:
             record("standard", "feed", "FAIL", repr(exc))
             failures.append("standard")
